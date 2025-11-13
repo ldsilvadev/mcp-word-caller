@@ -1,10 +1,6 @@
 import { handleUserPrompt } from "./chatApi";
 
-// O prompt de teste
-const prompt = `
- Leia o pedidos.xlsx e me diga quantos pedidos com status 'Pendente' também são da 'Região Sul, e também liste esses pedidos. Depois, crie um novo arquivo Excel chamado resumo_pedidos.xlsx que contenha esses pedidos, com os mesmos cabeçalhos, e adicione uma linha de resumo no final com o total de pedidos listados.
-
-`;
+const prompt = `Crie a Política de Home Office, código RH-PR-00013, tipo Política. A data de publicação é 13/11/2025 e a vigência é 13/11/2027. Por favor, gere o conteúdo padrão para este tipo de documento.`;
 
 async function main() {
   console.log("--- Executando Teste ---");

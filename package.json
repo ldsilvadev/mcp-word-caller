@@ -11,12 +11,15 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "@types/pizzip": "^3.0.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "docxtemplater": "^3.67.4",
     "dotenv": "^17.2.3",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "pizzip": "^3.2.0"
   }
 }
