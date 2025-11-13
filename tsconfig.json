@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    // --- Configurações Principais para Node.js (CommonJS) ---
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop": true, // <-- Adicionado: Melhora a importação de pacotes
+    "types": ["node"], // <-- Descomentado: Garante que os tipos do Node ('path', etc.) sejam carregados
+
+    // --- Recomendado ---
+    "strict": true,
+    "skipLibCheck": true,
+
+    // --- Outras Saídas (Mantidas) ---
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+
+    // --- Checagem de Tipo (Mantidas) ---
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true
+
+    // --- Configurações Removidas ---
+    // "jsx": "react-jsx" (Removido, a menos que você esteja usando React)
+    // "verbatimModuleSyntax": true (Removido, causa conflitos com CommonJS)
+    // "isolatedModules": true (Removido, desnecessário para ts-node)
+    // "moduleDetection": "force" (Removido, desnecessário)
+  }
+}
