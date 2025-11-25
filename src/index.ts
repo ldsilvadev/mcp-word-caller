@@ -1,20 +1,37 @@
-import { handleUserPrompt } from "./chatApi";
-
-const prompt = `Crie a Política de Home Office, código RH-PR-00013, tipo Política. A data de publicação é 13/11/2025 e a vigência é 13/11/2027. Por favor, gere o conteúdo padrão para este tipo de documento.`;
+import { handleUserPrompt } from "./api/chatApi";
 
 async function main() {
-  console.log("--- Executando Teste ---");
-  console.log("Prompt:", prompt);
+  // O Prompt agora é só o pedido, sem as regras técnicas (que já estão no chatApi)
+  const promptDoUsuario = `
+    Analise o documento que esta em C:\\Users\\dasilva.lucas\\Documents\\MCP\\call-word\\output\\Política_Home_Office_FIERGS-HO-321.docx
+    e modifique o titulo "Objetivo" para "Objetivo da Politica".
+  `;
+
+  // const promptDoUsuario = `
+  //   Crie uma política de Home Office.
+
+  //   Preencha com estas informações:
+  //   - Código: FIERGS-HO-321
+  //   - Assunto: Política de Home Office
+  //   - Departamento: RH
+  //   - Revisão: 1
+  //   - Data de publicação: 25/11/2024
+  //   - Data de vigência: 25/11/2026
+
+  //   Diretrizes:
+  //   1. Crie no mínimo 8 seções textuais bem elaboradas.
+  //   2. Crie uma tabela "tabela_dinamica" com colunas: Cargo, Limite Horas, Home Office.
+  //      (Ex: Diretor=Livre, Analista=50L).
+  // `;
+
+  console.log("--- Iniciando Teste de Integração MCP ---");
 
   try {
-    const respostaFinal = await handleUserPrompt(prompt);
-
-    console.log("\n------------------------------");
-    console.log("✅ Resposta Final da IA:");
-    console.log(respostaFinal);
-    console.log("------------------------------");
+    const resposta = await handleUserPrompt(promptDoUsuario);
+    console.log("\n✅ FINALIZADO COM SUCESSO:");
+    console.log(resposta);
   } catch (error) {
-    console.error("\n--- ERRO NA EXECUÇÃO ---", error);
+    console.error("\n❌ ERRO FATAL:", error);
   }
 }
 

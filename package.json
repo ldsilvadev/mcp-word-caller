@@ -1,5 +1,5 @@
 {
-  "name": "mcp-gemini-excel",
+  "name": "mcp-gemini-word",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -12,14 +12,19 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "@types/pizzip": "^3.0.5",
+    "@types/xmldom": "^0.1.34",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.22.0",
     "docxtemplater": "^3.67.4",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
-    "pizzip": "^3.2.0"
+    "mammoth": "^1.11.0",
+    "pizzip": "^3.2.0",
+    "xmldom": "^0.6.0",
+    "zod": "^4.1.13"
   }
 }
