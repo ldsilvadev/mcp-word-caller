@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Document {
+  id        Int          @id @default(autoincrement())
+  filename  String
+  content   Bytes
+  mimeType  String
+  createdAt DateTime     @default(now())
+  pdf       PdfDocument?
+}
+
+model PdfDocument {
+  id            Int      @id @default(autoincrement())
+  filename      String
+  content       Bytes
+  mimeType      String
+  createdAt     DateTime @default(now())
+  originalDocId Int      @unique
+  originalDoc   Document @relation(fields: [originalDocId], references: [id])
+}

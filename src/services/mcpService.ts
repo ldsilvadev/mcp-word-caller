@@ -4,9 +4,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Tool } from "@google/generative-ai";
 
 const PYTHON_PATH =
-  "C:\\Users\\dasilva.lucas\\Documents\\MCP\\Office-Word-MCP-Server\\venv\\Scripts\\python.exe";
+  "C:\\Users\\lucas\\Documents\\MCP\\Office-Word-MCP-Server\\venv\\Scripts\\python.exe";
 const MCP_SERVER_DIR =
-  "C:\\Users\\dasilva.lucas\\Documents\\MCP\\Office-Word-MCP-Server";
+  "C:\\Users\\lucas\\Documents\\MCP\\Office-Word-MCP-Server";
 
 export class McpService {
   private client: Client;
@@ -14,7 +14,6 @@ export class McpService {
   private isConnected: boolean = false;
 
   constructor() {
-
     this.transport = new StdioClientTransport({
       command: PYTHON_PATH,
       args: ["-m", "word_document_server.main"],

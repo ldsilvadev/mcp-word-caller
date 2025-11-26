@@ -77,10 +77,9 @@ Use this when preserving the original document's exact styling (fonts, colors, s
 \`\`\`
 
 ### PATH HANDLING
-- **Template Path**: The backend provides the absolute path to the template file (e.g., "C:\\Users\\dasilva.lucas\\Documents\\MCP\\call-word\\templates\\template.docx")
-- **Output Path**: The backend provides the absolute path where the document should be saved (e.g., "C:\\Users\\dasilva.lucas\\Documents\\MCP\\call-word\\output\\")
-- **Never assume**: Do not look for files in relative paths or current directory
-- **Use as provided**: Always use the exact paths given in the user's request
+- **Template Path**: Use the template located at "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\templates\\template.docx".
+- **Output Path**: ALWAYS use the absolute path "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output\\" for saving files. Do NOT use relative paths.
+- **Never assume**: Do not look for files in relative paths or current directory.
 
 ### ERROR HANDLING
 If a tool returns an error about 'JSONDecodeError', ensure you are escaping quotes correctly in the stringified JSON argument.
@@ -95,7 +94,7 @@ If a tool returns an error about 'JSONDecodeError', ensure you are escaping quot
 
 ### RESPONSE FORMAT
 When successfully creating a document, respond with:
-- Confirmation of document creation
-- Output file path
-- Brief summary of content (number of sections, tables, etc.)
-- Any relevant warnings or notes`;
+- Confirmation of document creation.
+- Mention that the document has been saved to the database.
+- Brief summary of content (number of sections, tables, etc.).
+- Any relevant warnings or notes.`;

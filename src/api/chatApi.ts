@@ -13,11 +13,32 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
   // 1. Inicializa ferramentas (Busca dinamicamente do Python)
   const tools = await getAllTools();
 
+  // 1.5 Busca documentos disponíveis para dar contexto ao modelo
+  const { documentService } = require("../services/documentService");
+  const docs = await documentService.getAllDocuments();
+  const outputDir = "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output";
+
+  const docsContext = docs
+    .map((d: any) => {
+      return `- ID: ${d.id} | Filename: ${d.filename} | Path: ${outputDir}\\${d.filename}`;
+    })
+    .join("\n");
+
+  const dynamicSystemInstruction = `${SYSTEM_INSTRUCTION}
+
+  CONTEXTO DE ARQUIVOS EXISTENTES:
+  Você tem acesso aos seguintes arquivos no sistema. Se o usuário pedir para editar ou ler um arquivo, USE O CAMINHO COMPLETO (Path) listado abaixo.
+  
+  ${docsContext}
+  
+  IMPORTANTE: Ao chamar ferramentas como 'edit_document', 'modify_document', etc., sempre use o 'Path' completo para garantir que o arquivo seja encontrado.
+  `;
+
   // 2. Configura Modelo com as ferramentas do Python
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-pro",
     tools: tools,
-    systemInstruction: SYSTEM_INSTRUCTION,
+    systemInstruction: dynamicSystemInstruction,
   });
 
   const chat: ChatSession = model.startChat();
@@ -53,6 +74,93 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
           toolResult = await mcpService.callTool(name, args);
 
           console.log("[Exec] Sucesso. Retorno do Python recebido.");
+
+          // --- INTERCEPTAÇÃO PARA SALVAR NO BANCO ---
+          const fileCreationTools = [
+            "create_word_document",
+            "create_policy_document",
+            "fill_document_simple",
+            "fill_document_template",
+            "merge_documents",
+            "edit_document",
+            "modify_document",
+            "update_document",
+            "replace_paragraph_block_below_header",
+            "replace_block_between_manual_anchors",
+            "set_table_column_width",
+            "set_table_column_widths",
+            "set_table_width",
+            "auto_fit_table_columns",
+            "format_table_cell_text",
+            "set_table_cell_padding",
+            "replace_text",
+            "modify_paragraph",
+            "search_and_replace",
+          ];
+
+          if (fileCreationTools.includes(name)) {
+            console.log(
+              `[Interception] Verificando ferramenta de arquivo: ${name}`
+            );
+
+            let filePath: string | null = null;
+            const safeArgs = args as any;
+
+            // 1. Tentar pegar do args (mais confiável)
+            if (safeArgs && typeof safeArgs === "object") {
+              if (safeArgs.output_path) filePath = safeArgs.output_path;
+              else if (safeArgs.filename)
+                filePath = safeArgs.filename; // Aceita relativo ou absoluto
+              else if (safeArgs.save_path) filePath = safeArgs.save_path;
+              else if (safeArgs.docx_path) filePath = safeArgs.docx_path;
+              else if (safeArgs.path) filePath = safeArgs.path;
+            }
+
+            // 2. Se não achou no args, tenta regex no output
+            if (!filePath) {
+              const match = toolResult
+                .toString()
+                .match(/([a-zA-Z]:\\[^:\n"]+\.docx)/i);
+              if (match) {
+                filePath = match[1].trim();
+              }
+            }
+
+            // 3. Se o path for relativo (não tem :) assumir output dir
+            if (filePath && !filePath.includes(":")) {
+              const path = require("path");
+              filePath = path.join(
+                "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output",
+                filePath
+              );
+            }
+
+            if (filePath) {
+              console.log(
+                `[Interception] Detectado arquivo criado: ${filePath}`
+              );
+              try {
+                const {
+                  documentService,
+                } = require("../services/documentService");
+                await documentService.saveDocumentFromFile(filePath);
+                console.log(
+                  "[Interception] Arquivo salvo no banco com sucesso."
+                );
+              } catch (dbError) {
+                console.error(
+                  "[Interception] Erro ao salvar no banco:",
+                  dbError
+                );
+              }
+            } else {
+              console.log(
+                "[Interception] Não foi possível identificar o caminho do arquivo para salvar."
+              );
+              console.log("Args:", JSON.stringify(args));
+              console.log("Output:", toolResult);
+            }
+          }
         } catch (e: any) {
           console.error(`[Exec] Erro ao executar ${name}:`, e.message);
           toolResult = {
