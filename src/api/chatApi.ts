@@ -71,6 +71,68 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
           // --- EXECUÇÃO UNIFICADA VIA MCP ---
           // Não verificamos mais implementação local. Mandamos tudo pro Python.
           console.log("[Exec] Enviando comando para o MCP Python...");
+
+          // --- SYNC STRATEGY: DOWNLOAD ON DEMAND ---
+          // Antes de chamar a ferramenta, verificamos se ela precisa de um arquivo que não está local.
+          // Se estiver no Supabase, baixamos para o outputDir local.
+          const safeArgs = args as any;
+          let targetFile: string | null = null;
+
+          if (safeArgs && typeof safeArgs === "object") {
+            if (safeArgs.filename) targetFile = safeArgs.filename;
+            else if (safeArgs.docx_path) targetFile = safeArgs.docx_path;
+            else if (safeArgs.path) targetFile = safeArgs.path;
+          }
+
+          if (targetFile && typeof targetFile === "string") {
+            // Normaliza path para checar se é um arquivo do nosso output
+            const path = require("path");
+            const fs = require("fs");
+            const { documentService } = require("../services/documentService");
+            const { storageService } = require("../services/storageService");
+
+            // Se for relativo, resolve para outputDir
+            if (!targetFile.includes(":")) {
+              targetFile = path.join(
+                "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output",
+                targetFile
+              );
+            }
+
+            // Verifica se existe localmente
+            if (!fs.existsSync(targetFile)) {
+              console.log(
+                `[Sync] Arquivo não encontrado localmente: ${targetFile}`
+              );
+              const filename = path.basename(targetFile);
+
+              // Busca no banco para pegar o storagePath
+              // Precisamos de um método findByFilename no documentService ou usar prisma direto
+              // Como documentService não tem findByFilename exposto, vamos usar prisma direto aqui ou adicionar lá.
+              // Vamos tentar achar pelo filename na lista de docs que já carregamos?
+              // A lista 'docs' lá em cima (linha 18) tem todos.
+
+              const docMeta = docs.find((d: any) => d.filename === filename);
+
+              if (docMeta && docMeta.storagePath) {
+                console.log(
+                  `[Sync] Encontrado no banco. Baixando do Supabase: ${docMeta.storagePath}`
+                );
+                try {
+                  const buffer = await storageService.downloadFile(
+                    docMeta.storagePath
+                  );
+                  await fs.promises.writeFile(targetFile, buffer);
+                  console.log(`[Sync] Download concluído para: ${targetFile}`);
+                } catch (dlError) {
+                  console.error(`[Sync] Falha ao baixar arquivo:`, dlError);
+                }
+              } else {
+                console.log(`[Sync] Arquivo não encontrado no banco de dados.`);
+              }
+            }
+          }
+
           toolResult = await mcpService.callTool(name, args);
 
           console.log("[Exec] Sucesso. Retorno do Python recebido.");

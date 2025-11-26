@@ -8,18 +8,20 @@ datasource db {
 }
 
 model Document {
-  id        Int          @id @default(autoincrement())
-  filename  String
-  content   Bytes
-  mimeType  String
-  createdAt DateTime     @default(now())
-  pdf       PdfDocument?
+  id          Int          @id @default(autoincrement())
+  filename    String
+  storagePath String
+  publicUrl   String?
+  mimeType    String
+  createdAt   DateTime     @default(now())
+  pdf         PdfDocument?
 }
 
 model PdfDocument {
   id            Int      @id @default(autoincrement())
   filename      String
-  content       Bytes
+  storagePath   String
+  publicUrl     String?
   mimeType      String
   createdAt     DateTime @default(now())
   originalDocId Int      @unique

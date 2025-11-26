@@ -24,6 +24,7 @@
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.22.0",
     "@prisma/client": "5.22.0",
+    "@supabase/supabase-js": "^2.85.0",
     "axios": "^1.13.2",
     "docxtemplater": "^3.67.4",
     "dotenv": "^17.2.3",

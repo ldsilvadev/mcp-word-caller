@@ -7,13 +7,19 @@ import util from "util";
 const execAsync = util.promisify(exec);
 const prisma = new PrismaClient();
 
+import { storageService } from "./storageService";
+
 export const documentService = {
   async saveDocumentFromFile(filePath: string) {
     try {
       const filename = path.basename(filePath);
-      const content = await fs.readFile(filePath);
       const mimeType =
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; // Assuming docx for now
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+      // Upload DOCX to Supabase
+      console.log(`[Storage] Uploading ${filename} to Supabase...`);
+      const storagePath = await storageService.uploadFile(filePath);
+      const publicUrl = storageService.getPublicUrl(storagePath);
 
       // Check if document already exists
       let doc = await prisma.document.findFirst({
@@ -27,7 +33,8 @@ export const documentService = {
         doc = await prisma.document.update({
           where: { id: doc.id },
           data: {
-            content,
+            storagePath,
+            publicUrl,
           },
         });
 
@@ -38,6 +45,8 @@ export const documentService = {
 
         if (existingPdf) {
           console.log(`[DB] Deleting old PDF for document ${doc.id}`);
+          // Also delete from Supabase? Ideally yes, but for now let's focus on DB
+          // await storageService.deleteFile(existingPdf.storagePath);
           await prisma.pdfDocument.delete({
             where: { id: existingPdf.id },
           });
@@ -46,7 +55,8 @@ export const documentService = {
         doc = await prisma.document.create({
           data: {
             filename,
-            content,
+            storagePath,
+            publicUrl,
             mimeType,
           },
         });
@@ -65,17 +75,22 @@ export const documentService = {
         );
 
         // Ensure paths are absolute and properly quoted for PowerShell
+        // Note: convert2pdf.ps1 still needs local files. We use the 'filePath' which is the local temp file.
         const command = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -docxPath "${filePath}" -pdfPath "${pdfPath}"`;
 
         console.log(`[PDF] Executing command: ${command}`);
         await execAsync(command);
 
-        const pdfBuffer = await fs.readFile(pdfPath);
+        // Upload PDF to Supabase
+        console.log(`[Storage] Uploading PDF ${pdfFilename} to Supabase...`);
+        const pdfStoragePath = await storageService.uploadFile(pdfPath);
+        const pdfPublicUrl = storageService.getPublicUrl(pdfStoragePath);
 
         await prisma.pdfDocument.create({
           data: {
             filename: pdfFilename,
-            content: pdfBuffer,
+            storagePath: pdfStoragePath,
+            publicUrl: pdfPublicUrl,
             mimeType: "application/pdf",
             originalDocId: doc.id,
           },
@@ -83,8 +98,7 @@ export const documentService = {
 
         console.log(`[PDF] PDF saved for document ${doc.id}`);
 
-        // Cleanup generated PDF file from disk (it's in DB now)
-        // Optional: keep it if you want to debug
+        // Cleanup generated PDF file from disk (it's in DB/Supabase now)
         await fs
           .unlink(pdfPath)
           .catch((err) => console.warn("Failed to delete temp PDF:", err));
@@ -119,6 +133,7 @@ export const documentService = {
         filename: true,
         createdAt: true,
         mimeType: true,
+        publicUrl: true,
       },
     });
   },

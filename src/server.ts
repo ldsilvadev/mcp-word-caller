@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { handleUserPrompt } from "./api/chatApi";
 import { documentService } from "./services/documentService";
+import { storageService } from "./services/storageService";
 import fs from "fs/promises";
 import path from "path";
 import util from "util";
@@ -66,9 +67,20 @@ fastify.get("/documents/:id", async (request, reply) => {
     return reply.status(404).send({ error: "Document not found" });
   }
 
-  reply.header("Content-Disposition", `attachment; filename="${doc.filename}"`);
-  reply.header("Content-Type", doc.mimeType);
-  return doc.content;
+  try {
+    const buffer = await storageService.downloadFile(doc.storagePath);
+    reply.header(
+      "Content-Disposition",
+      `attachment; filename="${doc.filename}"`
+    );
+    reply.header("Content-Type", doc.mimeType);
+    return buffer;
+  } catch (error) {
+    request.log.error(error);
+    return reply
+      .status(500)
+      .send({ error: "Failed to retrieve document content" });
+  }
 });
 
 // Get PDF Document Content Endpoint
@@ -80,12 +92,18 @@ fastify.get("/documents/:id/pdf", async (request, reply) => {
     return reply.status(404).send({ error: "PDF not found for this document" });
   }
 
-  reply.header(
-    "Content-Disposition",
-    `attachment; filename="${pdfDoc.filename}"`
-  );
-  reply.header("Content-Type", pdfDoc.mimeType);
-  return pdfDoc.content;
+  try {
+    const buffer = await storageService.downloadFile(pdfDoc.storagePath);
+    reply.header(
+      "Content-Disposition",
+      `attachment; filename="${pdfDoc.filename}"`
+    );
+    reply.header("Content-Type", pdfDoc.mimeType);
+    return buffer;
+  } catch (error) {
+    request.log.error(error);
+    return reply.status(500).send({ error: "Failed to retrieve PDF content" });
+  }
 });
 
 const start = async () => {
