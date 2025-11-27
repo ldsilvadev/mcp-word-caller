@@ -16,7 +16,7 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
   // 1.5 Busca documentos disponíveis para dar contexto ao modelo
   const { documentService } = require("../services/documentService");
   const docs = await documentService.getAllDocuments();
-  const outputDir = "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output";
+  const outputDir = "C:\\Users\\dasilva.lucas\\Documents\\MCP\\mcp-word-caller\\output";
 
   const docsContext = docs
     .map((d: any) => {
@@ -36,7 +36,7 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
 
   // 2. Configura Modelo com as ferramentas do Python
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-pro",
+    model: "gemini-2.5-flash",
     tools: tools,
     systemInstruction: dynamicSystemInstruction,
   });
@@ -94,7 +94,7 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             // Se for relativo, resolve para outputDir
             if (!targetFile.includes(":")) {
               targetFile = path.join(
-                "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output",
+                "C:\\Users\\dasilva.lucas\\Documents\\MCP\\mcp-word-caller\\output",
                 targetFile
               );
             }
@@ -157,7 +157,13 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             "set_table_cell_padding",
             "replace_text",
             "modify_paragraph",
+            "edit_paragraph_text",
             "search_and_replace",
+            "insert_line_or_paragraph_near_text",
+            "insert_paragraph_after",
+            "edit_header_footer",
+            "insert_text_inline",
+            "add_paragraph"
           ];
 
           if (fileCreationTools.includes(name)) {
@@ -192,7 +198,7 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             if (filePath && !filePath.includes(":")) {
               const path = require("path");
               filePath = path.join(
-                "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output",
+                "C:\\Users\\dasilva.lucas\\Documents\\MCP\\mcp-word-caller\\output",
                 filePath
               );
             }
@@ -202,13 +208,56 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
                 `[Interception] Detectado arquivo criado: ${filePath}`
               );
               try {
-                const {
-                  documentService,
-                } = require("../services/documentService");
-                await documentService.saveDocumentFromFile(filePath);
-                console.log(
-                  "[Interception] Arquivo salvo no banco com sucesso."
-                );
+                // Wait for file to exist (retry mechanism)
+                const fs = require("fs");
+                const waitForFile = async (
+                  path: string,
+                  timeout = 5000,
+                  interval = 500
+                ) => {
+                  const startTime = Date.now();
+                  while (Date.now() - startTime < timeout) {
+                    if (fs.existsSync(path)) {
+                      // Check if file size is > 0 to ensure it's fully written
+                      const stats = fs.statSync(path);
+                      if (stats.size > 0) {
+                        return true;
+                      }
+                    }
+                    await new Promise((resolve) =>
+                      setTimeout(resolve, interval)
+                    );
+                  }
+                  return false;
+                };
+
+                console.log(`[Interception] Aguardando arquivo: ${filePath}`);
+                const exists = await waitForFile(filePath);
+
+                if (!exists) {
+                  console.error(
+                    `[Interception] Arquivo não encontrado após espera: ${filePath}`
+                  );
+                  // Try to list directory to see what's there
+                  try {
+                    const dir = require("path").dirname(filePath);
+                    const files = fs.readdirSync(dir);
+                    console.log(`[Interception] Arquivos em ${dir}:`, files);
+                  } catch (lsErr) {
+                    console.error(
+                      "[Interception] Erro ao listar diretório:",
+                      lsErr
+                    );
+                  }
+                } else {
+                  const {
+                    documentService,
+                  } = require("../services/documentService");
+                  await documentService.saveDocumentFromFile(filePath);
+                  console.log(
+                    "[Interception] Arquivo salvo no banco com sucesso."
+                  );
+                }
               } catch (dbError) {
                 console.error(
                   "[Interception] Erro ao salvar no banco:",

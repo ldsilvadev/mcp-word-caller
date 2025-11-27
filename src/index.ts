@@ -8,12 +8,12 @@ async function main() {
   // `;
 
 const promptDoUsuario = `
-  Crie uma política de Abastecimento de Frota.
+  Crie uma política sobre Home Office.
 
   Preencha com estas informações:
-  - Código: FIERGS-AB-321
-  - Assunto: Política de Abastecimento de Frota
-  - Departamento: GESAD
+  - Código: FIERGS-HO-321
+  - Assunto: Home Office
+  - Departamento: RH
   - Revisão: 2
   - Data de publicação: 25/11/2024
   - Data de vigência: 25/11/2026
