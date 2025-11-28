@@ -163,7 +163,8 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             "insert_paragraph_after",
             "edit_header_footer",
             "insert_text_inline",
-            "add_paragraph"
+            "add_paragraph",
+            "add_section_with_inherited_formatting"
           ];
 
           if (fileCreationTools.includes(name)) {
