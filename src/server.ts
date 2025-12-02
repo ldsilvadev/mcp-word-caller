@@ -108,6 +108,10 @@ fastify.get("/documents/:id/pdf", async (request, reply) => {
 
 const start = async () => {
   try {
+    // Initialize Authentication (Device Code Flow)
+    const { authService } = require("./services/authService");
+    //await authService.initialize();
+
     const port = process.env.PORT ? parseInt(process.env.PORT) : 3001;
     await fastify.listen({ port, host: "0.0.0.0" });
     console.log(`Server listening on port ${port}`);

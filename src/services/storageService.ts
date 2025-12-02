@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 
 export class StorageService {
-  private supabase: SupabaseClient;
+  private supabase: SupabaseClient | undefined;
   private bucket = "documents";
 
   constructor() {
@@ -11,9 +11,8 @@ export class StorageService {
     const supabaseKey = process.env.SUPABASE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error(
-        "Missing SUPABASE_URL or SUPABASE_KEY in environment variables."
-      );
+      console.warn("⚠️ [Storage] Supabase credentials not found. StorageService will be disabled.");
+      return;
     }
 
     this.supabase = createClient(supabaseUrl, supabaseKey);
@@ -29,6 +28,7 @@ export class StorageService {
     filePath: string,
     destinationPath?: string
   ): Promise<string> {
+    if (!this.supabase) throw new Error("Supabase client not initialized.");
     try {
       const filename = path.basename(filePath);
       const targetPath = destinationPath || filename;
@@ -59,6 +59,7 @@ export class StorageService {
    * @returns The file content as a Buffer
    */
   async downloadFile(storagePath: string): Promise<Buffer> {
+    if (!this.supabase) throw new Error("Supabase client not initialized.");
     try {
       const { data, error } = await this.supabase.storage
         .from(this.bucket)
@@ -80,6 +81,7 @@ export class StorageService {
    * Gets a public URL for the file (if bucket is public).
    */
   getPublicUrl(storagePath: string): string {
+    if (!this.supabase) return "";
     const { data } = this.supabase.storage
       .from(this.bucket)
       .getPublicUrl(storagePath);
