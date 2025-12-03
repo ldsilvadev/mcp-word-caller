@@ -106,6 +106,53 @@ fastify.get("/documents/:id/pdf", async (request, reply) => {
   }
 });
 
+// ---------------------------------------------------------
+// NEW: Draft Endpoints
+// ---------------------------------------------------------
+
+// Get Draft
+fastify.get("/drafts/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { draftService } = require("./services/draftService");
+  const draft = await draftService.getDraft(parseInt(id));
+
+  if (!draft) {
+    return reply.status(404).send({ error: "Draft not found" });
+  }
+  return draft;
+});
+
+// Update Draft
+fastify.put("/drafts/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { content } = request.body as { content: any };
+  const { draftService } = require("./services/draftService");
+
+  try {
+    const draft = await draftService.updateDraft(parseInt(id), content);
+    return draft;
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ error: "Failed to update draft" });
+  }
+});
+
+// Generate Document from Draft
+fastify.post("/drafts/:id/generate", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { draftService } = require("./services/draftService");
+
+  try {
+    const result = await draftService.generateDocumentFromDraft(parseInt(id));
+    return result;
+  } catch (error: any) {
+    request.log.error(error);
+    return reply
+      .status(500)
+      .send({ error: "Failed to generate document from draft" });
+  }
+});
+
 const start = async () => {
   try {
     // Initialize Authentication (Device Code Flow)

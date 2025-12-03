@@ -13,7 +13,8 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
 
   const { documentService } = require("../services/documentService");
   const docs = await documentService.getAllDocuments();
-  const outputDir = "C:\\Users\\dasilva.lucas\\Documents\\MCP\\mcp-word-caller\\output";
+  const outputDir =
+    "C:\\Users\\dasilva.lucas\\Documents\\MCP\\mcp-word-caller\\output";
 
   const docsContext = docs
     .map((d: any) => {
@@ -84,50 +85,123 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
                 targetFile
               );
             }
-           
+
             const filename = path.basename(targetFile);
 
             const { PrismaClient } = require("@prisma/client");
             const prisma = new PrismaClient();
-            const doc = await prisma.document.findFirst({ where: { filename } });
+            const doc = await prisma.document.findFirst({
+              where: { filename },
+            });
 
             if (doc && doc.storagePath) {
-               console.log(`[Sync] Arquivo monitorado encontrado no banco (ID: ${doc.storagePath}).`);
-               console.log(`[Sync] Baixando versão mais recente do SharePoint para garantir integridade...`);
-               
-               const { sharePointService } = require("../services/sharePointService");
-               try {
-                 const buffer = await sharePointService.downloadFile(doc.storagePath);
-                 await fs.promises.writeFile(targetFile, buffer);
-                 console.log(`[Sync] Arquivo atualizado localmente: ${targetFile}`);
-               } catch (dlError) {
-                 console.error(`[Sync] Erro ao baixar do SharePoint (pode ter sido deletado?):`, dlError);
-                 if (!fs.existsSync(targetFile)) {
-                    throw new Error("Arquivo não encontrado no SharePoint e não existe localmente.");
-                 }
-                 console.warn("[Sync] Usando versão local como fallback.");
-               }
+              console.log(
+                `[Sync] Arquivo monitorado encontrado no banco (ID: ${doc.storagePath}).`
+              );
+              console.log(
+                `[Sync] Baixando versão mais recente do SharePoint para garantir integridade...`
+              );
+
+              const {
+                sharePointService,
+              } = require("../services/sharePointService");
+              try {
+                const buffer = await sharePointService.downloadFile(
+                  doc.storagePath
+                );
+                await fs.promises.writeFile(targetFile, buffer);
+                console.log(
+                  `[Sync] Arquivo atualizado localmente: ${targetFile}`
+                );
+              } catch (dlError) {
+                console.error(
+                  `[Sync] Erro ao baixar do SharePoint (pode ter sido deletado?):`,
+                  dlError
+                );
+                if (!fs.existsSync(targetFile)) {
+                  throw new Error(
+                    "Arquivo não encontrado no SharePoint e não existe localmente."
+                  );
+                }
+                console.warn("[Sync] Usando versão local como fallback.");
+              }
             } else {
-               if (!fs.existsSync(targetFile)) {
-                  console.log(`[Sync] Arquivo não está no banco e não existe localmente. Tentando busca por nome no SharePoint...`);
-                  const { sharePointService } = require("../services/sharePointService");
-                  try {
-                    const fileId = await sharePointService.getFileIdByName(filename);
-                    if (fileId) {
-                       console.log(`[Sync] Encontrado por nome (ID: ${fileId}). Baixando...`);
-                       const buffer = await sharePointService.downloadFile(fileId);
-                       await fs.promises.writeFile(targetFile, buffer);
-                    }
-                  } catch (e) {
-                     console.log("[Sync] Arquivo realmente não encontrado.");
+              if (!fs.existsSync(targetFile)) {
+                console.log(
+                  `[Sync] Arquivo não está no banco e não existe localmente. Tentando busca por nome no SharePoint...`
+                );
+                const {
+                  sharePointService,
+                } = require("../services/sharePointService");
+                try {
+                  const fileId = await sharePointService.getFileIdByName(
+                    filename
+                  );
+                  if (fileId) {
+                    console.log(
+                      `[Sync] Encontrado por nome (ID: ${fileId}). Baixando...`
+                    );
+                    const buffer = await sharePointService.downloadFile(fileId);
+                    await fs.promises.writeFile(targetFile, buffer);
                   }
-               }
+                } catch (e) {
+                  console.log("[Sync] Arquivo realmente não encontrado.");
+                }
+              }
             }
           }
 
-          toolResult = await mcpService.callTool(name, args);
+          // ---------------------------------------------------------
+          // NEW: Draft Management Tools
+          // ---------------------------------------------------------
+          if (name === "create_draft") {
+            const { draftService } = require("../services/draftService");
+            const draft = await draftService.createDraft(
+              safeArgs.title,
+              safeArgs.content
+            );
+            toolResult = `Draft created successfully. ID: ${draft.id}. Title: ${draft.title}. \nYou can now ask the user to review it or update it using 'update_draft'.`;
+          } else if (name === "get_draft") {
+            const { draftService } = require("../services/draftService");
+            const draft = await draftService.getDraft(safeArgs.id);
+            if (draft) {
+              toolResult = JSON.stringify(draft);
+            } else {
+              toolResult = "Draft not found.";
+            }
+          } else if (name === "update_draft") {
+            const { draftService } = require("../services/draftService");
+            const draft = await draftService.updateDraft(
+              safeArgs.id,
+              safeArgs.content
+            );
+            toolResult = `Draft updated successfully. ID: ${draft.id}.`;
+          } else if (name === "generate_document_from_draft") {
+            const { draftService } = require("../services/draftService");
+            // This returns { result: "...", filename: "..." }
+            const genResult = await draftService.generateDocumentFromDraft(
+              safeArgs.id
+            );
 
-          console.log("[Exec] Sucesso. Retorno do Python recebido.");
+            // The result from draftService.generateDocumentFromDraft contains the output from the MCP tool
+            // We need to set toolResult to this output so the interception logic below can pick it up
+            toolResult = genResult.result;
+
+            // We also need to ensure 'args' has the filename so the interception logic knows where to look
+            // The interception logic looks at 'args.filename' or 'args.output_path' etc.
+            // We can inject it into 'args' here for the subsequent logic
+            if (!args) (args as any) = {};
+            (args as any).filename = genResult.filename;
+
+            console.log(
+              `[Draft] Generated document filename: ${genResult.filename}`
+            );
+          } else {
+            // Fallback to standard MCP tools
+            toolResult = await mcpService.callTool(name, args);
+          }
+
+          console.log("[Exec] Sucesso. Retorno do Python/Local recebido.");
 
           const fileCreationTools = [
             "create_word_document",
@@ -155,7 +229,9 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             "edit_header_footer",
             "insert_text_inline",
             "add_paragraph",
-            "add_section_with_inherited_formatting"
+            "add_section_with_inherited_formatting",
+            // Add the new generation tool to this list so interception works
+            "generate_document_from_draft",
           ];
 
           if (fileCreationTools.includes(name)) {
@@ -168,8 +244,7 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
 
             if (safeArgs && typeof safeArgs === "object") {
               if (safeArgs.output_path) filePath = safeArgs.output_path;
-              else if (safeArgs.filename)
-                filePath = safeArgs.filename;
+              else if (safeArgs.filename) filePath = safeArgs.filename;
               else if (safeArgs.save_path) filePath = safeArgs.save_path;
               else if (safeArgs.docx_path) filePath = safeArgs.docx_path;
               else if (safeArgs.path) filePath = safeArgs.path;
@@ -236,20 +311,36 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
                     );
                   }
                 } else {
-                const { sharePointService } = require("../services/sharePointService");
-                const uploadRes = await sharePointService.uploadFile(filePath);
-                console.log("[Interception] Upload para SharePoint concluído.");
-                
-                const link = await sharePointService.createSharingLink(uploadRes.id);
-                console.log(`[Interception] Link de edição gerado: ${link}`);
-                
-                const { documentService } = require("../services/documentService");
-                const path = require("path");
-                await documentService.saveSharePointDocument(path.basename(filePath), uploadRes.id, link);
-                console.log("[Interception] Metadados salvos no banco.");
+                  const {
+                    sharePointService,
+                  } = require("../services/sharePointService");
+                  const uploadRes = await sharePointService.uploadFile(
+                    filePath
+                  );
+                  console.log(
+                    "[Interception] Upload para SharePoint concluído."
+                  );
 
-                toolResult = `Arquivo salvo e enviado para o SharePoint.\nLink de Edição: ${link}\n\n${JSON.stringify(toolResult)}`;
-              }
+                  const link = await sharePointService.createSharingLink(
+                    uploadRes.id
+                  );
+                  console.log(`[Interception] Link de edição gerado: ${link}`);
+
+                  const {
+                    documentService,
+                  } = require("../services/documentService");
+                  const path = require("path");
+                  await documentService.saveSharePointDocument(
+                    path.basename(filePath),
+                    uploadRes.id,
+                    link
+                  );
+                  console.log("[Interception] Metadados salvos no banco.");
+
+                  toolResult = `Arquivo salvo e enviado para o SharePoint.\nLink de Edição: ${link}\n\n${JSON.stringify(
+                    toolResult
+                  )}`;
+                }
               } catch (dbError) {
                 console.error(
                   "[Interception] Erro ao salvar no SharePoint:",
