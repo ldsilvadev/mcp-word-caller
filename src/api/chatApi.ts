@@ -17,7 +17,8 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
 
   const docsContext = docs
     .map((d: any) => {
-      return `- ID: ${d.id} | Filename: ${d.filename} | Path: ${outputDir}\\${d.filename}`;
+      const linkInfo = d.sharePointLink ? ` | SharePoint Link: ${d.sharePointLink}` : '';
+      return `- ID: ${d.id} | Filename: ${d.filename} | Path: ${outputDir}\\${d.filename}${linkInfo}`;
     })
     .join("\n");
 
@@ -92,20 +93,44 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             const doc = await prisma.document.findFirst({ where: { filename } });
 
             if (doc && doc.storagePath) {
-               console.log(`[Sync] Arquivo monitorado encontrado no banco (ID: ${doc.storagePath}).`);
-               console.log(`[Sync] Baixando versão mais recente do SharePoint para garantir integridade...`);
+               console.log(`[Sync] ========================================`);
+               console.log(`[Sync] Arquivo monitorado encontrado no banco.`);
+               console.log(`[Sync] - Filename: ${doc.filename}`);
+               console.log(`[Sync] - SharePoint ID: ${doc.storagePath}`);
+               console.log(`[Sync] - Target local: ${targetFile}`);
+               console.log(`[Sync] Baixando versão MAIS RECENTE do SharePoint...`);
                
                const { sharePointService } = require("../services/sharePointService");
                try {
+                 // Delay de 2 segundos para garantir que o SharePoint processou as últimas mudanças
+                 // (Word Online pode demorar para "commitar" as edições)
+                 console.log(`[Sync] Aguardando 2s para SharePoint processar mudanças...`);
+                 await new Promise(resolve => setTimeout(resolve, 2000));
+                 
                  const buffer = await sharePointService.downloadFile(doc.storagePath);
+                 
+                 // Verifica se o arquivo local existe e compara tamanhos
+                 if (fs.existsSync(targetFile)) {
+                   const localStats = fs.statSync(targetFile);
+                   console.log(`[Sync] Tamanho local anterior: ${localStats.size} bytes`);
+                   console.log(`[Sync] Tamanho do SharePoint: ${buffer.length} bytes`);
+                   
+                   if (localStats.size === buffer.length) {
+                     console.log(`[Sync] ⚠️ ATENÇÃO: Tamanhos iguais - pode ser a mesma versão!`);
+                   } else {
+                     console.log(`[Sync] ✅ Tamanhos diferentes - versão atualizada detectada!`);
+                   }
+                 }
+                 
                  await fs.promises.writeFile(targetFile, buffer);
-                 console.log(`[Sync] Arquivo atualizado localmente: ${targetFile}`);
-               } catch (dlError) {
-                 console.error(`[Sync] Erro ao baixar do SharePoint (pode ter sido deletado?):`, dlError);
+                 console.log(`[Sync] ✅ Arquivo atualizado localmente: ${targetFile}`);
+                 console.log(`[Sync] ========================================`);
+               } catch (dlError: any) {
+                 console.error(`[Sync] ❌ Erro ao baixar do SharePoint:`, dlError.message);
                  if (!fs.existsSync(targetFile)) {
                     throw new Error("Arquivo não encontrado no SharePoint e não existe localmente.");
                  }
-                 console.warn("[Sync] Usando versão local como fallback.");
+                 console.warn("[Sync] ⚠️ Usando versão local como fallback (pode estar desatualizada!).");
                }
             } else {
                if (!fs.existsSync(targetFile)) {
@@ -128,6 +153,9 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
           toolResult = await mcpService.callTool(name, args);
 
           console.log("[Exec] Sucesso. Retorno do Python recebido.");
+          console.log("[Exec] ========== RETORNO MCP ==========");
+          console.log(JSON.stringify(toolResult, null, 2));
+          console.log("[Exec] ==================================");
 
           const fileCreationTools = [
             "create_word_document",
@@ -157,6 +185,16 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             "add_paragraph",
             "add_section_with_inherited_formatting"
           ];
+
+          // Verifica se o search_and_replace não encontrou nada
+          if (name === "search_and_replace") {
+            const resultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+            if (resultStr.includes("0 replacement") || resultStr.includes("no replacement") || resultStr.includes("not found") || resultStr.includes("No matches")) {
+              console.log("[Exec] ⚠️ search_and_replace não encontrou o texto!");
+              // Adiciona informação útil para debug
+              toolResult = `${toolResult}\n\n⚠️ ATENÇÃO: O texto buscado não foi encontrado no documento. Isso pode acontecer se:\n1. O texto está escrito de forma diferente (maiúsculas/minúsculas, espaços extras)\n2. O texto está em um formato especial (título, cabeçalho)\n3. O documento no SharePoint ainda não foi sincronizado com suas últimas edições\n\nSugestão: Use a ferramenta 'get_document_text' para ver o conteúdo atual do documento.`;
+            }
+          }
 
           if (fileCreationTools.includes(name)) {
             console.log(
@@ -237,18 +275,32 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
                   }
                 } else {
                 const { sharePointService } = require("../services/sharePointService");
-                const uploadRes = await sharePointService.uploadFile(filePath);
-                console.log("[Interception] Upload para SharePoint concluído.");
                 
-                const link = await sharePointService.createSharingLink(uploadRes.id);
-                console.log(`[Interception] Link de edição gerado: ${link}`);
-                
-                const { documentService } = require("../services/documentService");
-                const path = require("path");
-                await documentService.saveSharePointDocument(path.basename(filePath), uploadRes.id, link);
-                console.log("[Interception] Metadados salvos no banco.");
+                try {
+                  const uploadRes = await sharePointService.uploadFile(filePath);
+                  console.log("[Interception] Upload para SharePoint concluído.");
+                  
+                  const link = await sharePointService.createSharingLink(uploadRes.id);
+                  console.log(`[Interception] Link de edição gerado: ${link}`);
+                  
+                  const { documentService } = require("../services/documentService");
+                  const path = require("path");
+                  await documentService.saveSharePointDocument(path.basename(filePath), uploadRes.id, link);
+                  console.log("[Interception] Metadados salvos no banco.");
 
-                toolResult = `Arquivo salvo e enviado para o SharePoint.\nLink de Edição: ${link}\n\n${JSON.stringify(toolResult)}`;
+                  toolResult = `Arquivo salvo e enviado para o SharePoint.\nLink de Edição: ${link}\n\n${JSON.stringify(toolResult)}`;
+                } catch (uploadError: any) {
+                  const errorMessage = uploadError.message?.toLowerCase() || '';
+                  const errorCode = uploadError.statusCode || uploadError.code || '';
+                  
+                  // Tratamento para erro 423 (documento bloqueado no SharePoint)
+                  if (errorCode === 423 || errorMessage.includes('locked') || errorMessage.includes('423') || errorMessage.includes('being edited') || errorMessage.includes('in use') || errorMessage.includes('checked out')) {
+                    console.error("[Interception] Documento bloqueado no SharePoint:", uploadError.message);
+                    toolResult = `⚠️ ATENÇÃO: O documento está bloqueado no SharePoint!\n\nO arquivo foi modificado localmente, mas NÃO foi possível sincronizar com o SharePoint porque o documento está aberto.\n\n👉 AÇÃO NECESSÁRIA: Por favor, FECHE o documento no Word ou SharePoint e solicite a operação novamente.\n\nErro técnico: ${uploadError.message}`;
+                  } else {
+                    throw uploadError;
+                  }
+                }
               }
               } catch (dbError) {
                 console.error(
@@ -266,9 +318,22 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
           }
         } catch (e: any) {
           console.error(`[Exec] Erro ao executar ${name}:`, e.message);
-          toolResult = {
-            error: `Erro na execução da ferramenta: ${e.message}`,
-          };
+          
+          // Tratamento especial para erro 423 (documento bloqueado)
+          const errorMessage = e.message?.toLowerCase() || '';
+          const errorCode = e.statusCode || e.code || '';
+          
+          if (errorCode === 423 || errorMessage.includes('locked') || errorMessage.includes('423') || errorMessage.includes('being edited') || errorMessage.includes('in use')) {
+            toolResult = {
+              error: `DOCUMENTO_BLOQUEADO: O documento está aberto por outro usuário ou aplicativo. Por favor, feche o documento no Word/SharePoint e tente novamente.`,
+              userAction: "FECHAR_DOCUMENTO",
+              originalError: e.message
+            };
+          } else {
+            toolResult = {
+              error: `Erro na execução da ferramenta: ${e.message}`,
+            };
+          }
         }
 
         functionResponses.push({

@@ -94,8 +94,28 @@ If a tool returns an error about 'JSONDecodeError', ensure you are escaping quot
 6. **list_available_documents**: Lists .docx files in a specified directory (use absolute paths).
 
 ### RESPONSE FORMAT
-When successfully creating a document, respond with:
-- Confirmation of document creation.
-- Mention that the document has been saved to the database.
-- Brief summary of content (number of sections, tables, etc.).
-- Any relevant warnings or notes.`;
+
+#### Para CRIAÇÃO ou EDIÇÃO de documentos:
+Quando criar ou editar um documento com sucesso, responda com:
+- Confirmação da operação realizada.
+- Menção de que o documento foi salvo no banco de dados.
+- Breve resumo do conteúdo (número de seções, tabelas, etc.).
+- O link do SharePoint será automaticamente incluído pelo sistema.
+
+#### Para CONSULTAS sobre documentos (leitura, listagem, informações):
+Quando o usuário perguntar sobre documentos existentes, SEMPRE inclua:
+- A informação solicitada.
+- O link do documento no SharePoint (se disponível no contexto).
+- Formato: "📄 Link do documento: [URL]"
+
+#### Para ERROS de documento bloqueado:
+Se receber um erro indicando que o documento está bloqueado (erro 423, "locked", "in use"):
+- Informe claramente ao usuário que o documento está aberto.
+- Peça para o usuário FECHAR o documento no Word ou SharePoint.
+- Solicite que tente novamente após fechar.
+- Exemplo: "⚠️ O documento está aberto no momento. Por favor, feche-o no Word/SharePoint e solicite a operação novamente."
+
+### LINK DO DOCUMENTO
+- Sempre que mencionar um documento existente no contexto, inclua seu link de acesso.
+- O link permite que o usuário acesse diretamente o documento no SharePoint.
+- Formato preferido: "Você pode acessar o documento aqui: [LINK]"`;

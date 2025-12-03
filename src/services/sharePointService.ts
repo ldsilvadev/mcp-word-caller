@@ -90,24 +90,60 @@ export class SharePointService {
   }
 
   /**
+   * Obtém metadados do arquivo para verificar última modificação
+   */
+  async getFileMetadata(itemId: string): Promise<any> {
+    const client = await this.getClient();
+    try {
+      const endpoint = `${this.getDrivePath()}/items/${itemId}`;
+      const response = await client.api(endpoint).get();
+      return response;
+    } catch (error) {
+      console.error(`[SharePoint] Error getting metadata for ${itemId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Downloads a file.
+   * Força download da versão mais recente do SharePoint (sem cache).
    */
   async downloadFile(itemId: string): Promise<Buffer> {
     const accessToken = await authService.getAccessToken();
     
-    // ⚠️ MUDANÇA AQUI: URL absoluta precisa mudar também
-    // De: https://graph.microsoft.com/v1.0/me/drive...
-    // Para: https://graph.microsoft.com/v1.0/users/{email}/drive...
+    // Primeiro, verifica os metadados para log
+    const metadata = await this.getFileMetadata(itemId);
+    if (metadata) {
+      console.log(`[SharePoint] File metadata:`);
+      console.log(`[SharePoint] - Name: ${metadata.name}`);
+      console.log(`[SharePoint] - Size: ${metadata.size} bytes`);
+      console.log(`[SharePoint] - Last Modified: ${metadata.lastModifiedDateTime}`);
+      console.log(`[SharePoint] - Modified By: ${metadata.lastModifiedBy?.user?.displayName || 'Unknown'}`);
+    }
+    
+    // URL para download do arquivo
     const downloadUrl = `https://graph.microsoft.com/v1.0/users/${TARGET_USER_ID}/drive/items/${itemId}/content`;
+    
+    console.log(`[SharePoint] Downloading file ${itemId} (forcing fresh version)...`);
     
     try {
       const fetchResponse = await fetch(downloadUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'If-None-Match': '' // Força ignorar ETag cache
+        }
       });
       
-      if (!fetchResponse.ok) throw new Error(`Download failed: ${fetchResponse.statusText}`);
+      if (!fetchResponse.ok) {
+        const errorText = await fetchResponse.text();
+        console.error(`[SharePoint] Download failed: ${fetchResponse.status} - ${errorText}`);
+        throw new Error(`Download failed: ${fetchResponse.statusText}`);
+      }
       
       const arrayBuffer = await fetchResponse.arrayBuffer();
+      console.log(`[SharePoint] Download complete. Size: ${arrayBuffer.byteLength} bytes`);
       return Buffer.from(arrayBuffer);
       
     } catch (error) {
