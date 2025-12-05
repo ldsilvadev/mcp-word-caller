@@ -1,12 +1,11 @@
 // src/services/mcpService.ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { Tool } from "@google/generative-ai";
 
 const PYTHON_PATH =
-  "C:\\Users\\lucas\\Documents\\POC MCP\\office-word-mcp-server\\venv\\Scripts\\python";
+  "C:\\Users\\dasilva.lucas\\Documents\\MCP-WORD\\office-word-mcp-server\\venv\\Scripts\\python";
 const MCP_SERVER_DIR =
-  "C:\\Users\\lucas\\Documents\\POC MCP\\office-word-mcp-server";
+  "C:\\Users\\dasilva.lucas\\Documents\\MCP-WORD\\office-word-mcp-server";
 
 
 export class McpService {
@@ -40,24 +39,13 @@ export class McpService {
     }
   }
 
-  async getToolsAsGeminiFormat(): Promise<Tool[]> {
+  /**
+   * Retorna as ferramentas no formato raw do MCP
+   */
+  async getTools(): Promise<any[]> {
     if (!this.isConnected) await this.connect();
-
     const mcpList = await this.client.listTools();
-
-    // Converte o Schema do MCP (JSON Schema) para o formato do Gemini
-    const geminiTools: Tool[] = [
-      {
-        functionDeclarations: mcpList.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description || "",
-          // O Gemini aceita o inputSchema do MCP quase diretamente
-          parameters: tool.inputSchema as any,
-        })),
-      },
-    ];
-
-    return geminiTools;
+    return mcpList.tools;
   }
 
   async callTool(name: string, args: any): Promise<any> {

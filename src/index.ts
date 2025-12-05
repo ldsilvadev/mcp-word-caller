@@ -8,18 +8,21 @@ async function main() {
   // `;
 
 const promptDoUsuario = `
-  Crie uma política sobre Home Office.
+  Crie uma política sobre Abastecimento de Frota.
 
   Preencha com estas informações:
   - Código: FIERGS-HO-321
-  - Assunto: Home Office
-  - Departamento: RH
-  - Revisão: 2
+  - Assunto: Abastecimento de Frota
+  - Departamento: GESAD
+  - Revisão: 1
   - Data de publicação: 25/11/2024
   - Data de vigência: 25/11/2026
 
   Diretrizes:
-  1. Crie no mínimo 10 seções textuais bem elaboradas utilizando seu conhecimento.
+  1. Crie no mínimo 12 seções textuais bem elaboradas utilizando seu conhecimento.
+  2. Crie uma utlima seção com um titulo "Observações Finais" e uma tabela com as seguintes colunas, Cargo, Quantidade, Possui,  preencha essa tabela com seus conhecimentos.
+
+  Adicione uma nova seção com um titulo "Observações finais" e uma tabela com as seguintes colunas, Cargo, Quantidade, Possui,  preencha essa tabela com seus conhecimentos.
 
   O que uma política de home office deve conter:
   - Jornada de trabalho: Definição clara dos horários de início, término e intervalos. 

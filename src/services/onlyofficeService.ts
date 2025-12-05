@@ -49,18 +49,37 @@ interface OnlyOfficeConfig {
 
 export const onlyofficeService = {
   /**
-   * Gera uma chave única para o documento (usada pelo OnlyOffice para cache)
+   * Gera uma chave única para o documento
+   * A chave muda quando o arquivo é modificado para forçar reload
    */
-  generateDocumentKey(draftId: number, version: number = 1): string {
-    const data = `draft-${draftId}-v${version}-${Date.now()}`;
+  async generateDocumentKey(draftId: number): Promise<string> {
+    const { draftService } = require("./draftService");
+    const filePath = await draftService.getDraftFilePath(draftId);
+    
+    let mtime = Date.now();
+    if (filePath) {
+      try {
+        const stats = await fs.stat(filePath);
+        mtime = stats.mtimeMs;
+      } catch {
+        // Arquivo não existe ainda
+      }
+    }
+    
+    const data = `draft-${draftId}-${mtime}`;
     return crypto.createHash("md5").update(data).digest("hex");
   },
 
   /**
    * Gera a configuração do editor OnlyOffice para um draft
    */
-  async getEditorConfig(draftId: number, filename: string, userId: string = "user1", userName: string = "Usuário"): Promise<OnlyOfficeConfig> {
-    const documentKey = this.generateDocumentKey(draftId);
+  async getEditorConfig(
+    draftId: number, 
+    filename: string, 
+    userId: string = "user1", 
+    userName: string = "Usuário"
+  ): Promise<OnlyOfficeConfig> {
+    const documentKey = await this.generateDocumentKey(draftId);
     
     const config: OnlyOfficeConfig = {
       document: {
@@ -107,6 +126,7 @@ export const onlyofficeService = {
 
   /**
    * Processa o callback do OnlyOffice quando o documento é salvo
+   * SIMPLIFICADO: Salva diretamente no arquivo original do draft
    */
   async processCallback(draftId: number, body: any): Promise<{ error: number }> {
     const { status, url, key } = body;
@@ -123,8 +143,8 @@ export const onlyofficeService = {
     // 7 - error has occurred while force saving the document
 
     if (status === 2 || status === 6) {
-      // Documento pronto para salvar - baixar e atualizar
       try {
+        // Baixar o documento do OnlyOffice
         const response = await fetch(url);
         if (!response.ok) {
           console.error(`[OnlyOffice] Failed to download document: ${response.status}`);
@@ -133,24 +153,21 @@ export const onlyofficeService = {
 
         const buffer = Buffer.from(await response.arrayBuffer());
         
-        // Salvar o arquivo no diretório de output
-        const filename = `draft_${draftId}.docx`;
-        const filePath = path.join(OUTPUT_DIR, filename);
-        
-        await fs.mkdir(OUTPUT_DIR, { recursive: true });
-        await fs.writeFile(filePath, buffer);
-        
-        console.log(`[OnlyOffice] Document saved: ${filePath}`);
-
-        // Atualizar o draft no banco com referência ao arquivo
+        // Obter o caminho do arquivo original do draft
         const { draftService } = require("./draftService");
-        const draft = await draftService.getDraft(draftId);
-        if (draft) {
-          const content = draft.content || {};
-          content.onlyofficeFile = filename;
-          content.lastSavedAt = new Date().toISOString();
-          await draftService.updateDraft(draftId, content);
+        const filePath = await draftService.getDraftFilePath(draftId);
+        
+        if (!filePath) {
+          console.error(`[OnlyOffice] Draft ${draftId} has no file path`);
+          return { error: 1 };
         }
+
+        // Salvar diretamente no arquivo original
+        await fs.writeFile(filePath, buffer);
+        console.log(`[OnlyOffice] ✅ Document saved directly to: ${filePath} (${buffer.length} bytes)`);
+
+        // Marcar o draft como modificado
+        await draftService.markAsModified(draftId);
 
         return { error: 0 };
       } catch (error) {
