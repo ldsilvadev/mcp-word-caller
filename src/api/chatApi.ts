@@ -6,21 +6,157 @@ import { SYSTEM_INSTRUCTION } from "../config/systemPrompts";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
-export async function handleUserPrompt(promptUsuario: string): Promise<string> {
+// Interface para conteúdo do editor
+interface EditorContent {
+  markdown: string;
+  metadata: {
+    assunto: string;
+    codigo: string;
+    departamento: string;
+    revisao: string;
+    data_publicacao: string;
+    data_vigencia: string;
+  };
+}
+
+// Interface para resposta do chat
+export interface ChatResponse {
+  response: string;
+  draftUpdated: boolean;
+  updatedDraftId: number | null;
+}
+
+export async function handleUserPrompt(
+  promptUsuario: string, 
+  activeDraftId?: number | null,
+  currentEditorContent?: EditorContent | null
+): Promise<ChatResponse> {
   console.log(`[Cliente] Recebido: "${promptUsuario}"`);
+  console.log(`[Cliente] Active Draft ID: ${activeDraftId || "none"}`);
+  console.log(`[Cliente] Editor content provided: ${currentEditorContent ? "yes" : "no"}`);
+
+  // Rastrear se o draft foi atualizado durante esta interação
+  let draftWasUpdated = false;
+  let updatedDraftId: number | null = null;
 
   const tools = await getAllTools();
 
   const { documentService } = require("../services/documentService");
   const docs = await documentService.getAllDocuments();
   const outputDir =
-    "C:\\Users\\dasilva.lucas\\Documents\\MCP\\mcp-word-caller\\output";
+    "C:\\Users\\lucas\\Documents\\POC MCP\\mcp-word-caller\\output";
 
   const docsContext = docs
     .map((d: any) => {
       return `- ID: ${d.id} | Filename: ${d.filename} | Path: ${outputDir}\\${d.filename}`;
     })
     .join("\n");
+
+  // Adicionar contexto do draft ativo se existir
+  let activeDraftContext = "";
+  if (activeDraftId) {
+    const { draftService } = require("../services/draftService");
+    const activeDraft = await draftService.getDraft(activeDraftId);
+    if (activeDraft) {
+      // PRIORIDADE: Usar conteúdo do editor se disponível (pode ter edições manuais do usuário)
+      // Caso contrário, usar conteúdo do banco de dados
+      let contentPreview = "";
+      let usingEditorContent = false;
+      
+      if (currentEditorContent && currentEditorContent.markdown) {
+        // Usar conteúdo atual do editor (inclui edições manuais do usuário)
+        contentPreview = currentEditorContent.markdown;
+        usingEditorContent = true;
+        console.log(`[Cliente] Usando conteúdo do EDITOR (pode ter edições manuais)`);
+      } else {
+        // Fallback: usar conteúdo do banco de dados
+        const content = activeDraft.content;
+        if (typeof content === "string") {
+          contentPreview = content.substring(0, 4000);
+        } else if (content && typeof content === "object") {
+          if (content.markdownContent) {
+            contentPreview = content.markdownContent.substring(0, 4000);
+          } else if (content.secao && Array.isArray(content.secao)) {
+            contentPreview = content.secao.map((s: any) => `${s.titulo}: ${(s.paragrafo || "").substring(0, 200)}...`).join("\n");
+          } else {
+            contentPreview = JSON.stringify(content).substring(0, 4000);
+          }
+        }
+        console.log(`[Cliente] Usando conteúdo do BANCO DE DADOS`);
+      }
+
+      // Metadados: priorizar do editor se disponível
+      const metadata = currentEditorContent?.metadata || {
+        assunto: (activeDraft.content as any)?.assunto || activeDraft.title,
+        codigo: (activeDraft.content as any)?.codigo || "",
+        departamento: (activeDraft.content as any)?.departamento || "",
+        revisao: (activeDraft.content as any)?.revisao || "01",
+        data_publicacao: (activeDraft.content as any)?.data_publicacao || "",
+        data_vigencia: (activeDraft.content as any)?.data_vigencia || "",
+      };
+
+      activeDraftContext = `
+
+=== DRAFT ATIVO NO EDITOR (CRÍTICO - LEIA COM ATENÇÃO) ===
+O usuário está visualizando e editando o seguinte rascunho:
+- ID do Draft: ${activeDraftId}
+- Título: ${activeDraft.title}
+- Status: ${activeDraft.status}
+${usingEditorContent ? "- ⚠️ ATENÇÃO: O conteúdo abaixo é do EDITOR e pode conter EDIÇÕES MANUAIS do usuário que ainda não foram salvas!" : ""}
+
+METADADOS DO DOCUMENTO:
+- Assunto: ${metadata.assunto}
+- Código: ${metadata.codigo}
+- Departamento: ${metadata.departamento}
+- Revisão: ${metadata.revisao}
+- Data Publicação: ${metadata.data_publicacao}
+- Data Vigência: ${metadata.data_vigencia}
+
+CONTEÚDO ATUAL DO DRAFT (MARKDOWN):
+${contentPreview}
+
+=== REGRAS OBRIGATÓRIAS ===
+${usingEditorContent ? `
+⚠️ IMPORTANTE: O conteúdo acima pode conter EDIÇÕES MANUAIS do usuário!
+Ao fazer modificações, você DEVE:
+1. PRESERVAR todas as alterações que o usuário fez manualmente
+2. Apenas modificar o que foi explicitamente solicitado
+3. Mesclar suas alterações com as edições do usuário
+` : ""}
+
+VOCÊ DEVE SEMPRE usar as ferramentas de draft quando o usuário pedir QUALQUER modificação.
+
+Se o usuário pedir para:
+- Modificar, alterar, editar, mudar texto
+- Adicionar, incluir, inserir conteúdo
+- Remover, excluir, deletar partes
+- Corrigir, ajustar, melhorar algo
+- Trocar, substituir palavras ou seções
+
+VOCÊ DEVE OBRIGATORIAMENTE:
+1. Usar o conteúdo ATUAL mostrado acima como base (NÃO chamar get_draft, pois o conteúdo do editor pode ser diferente do banco)
+2. Fazer a modificação solicitada PRESERVANDO as outras partes
+3. Chamar 'update_draft' com id=${activeDraftId} e o conteúdo COMPLETO atualizado
+
+NUNCA responda apenas com texto explicando o que faria.
+SEMPRE execute as ferramentas para fazer a modificação real.
+NUNCA crie um novo draft - use SEMPRE o ID ${activeDraftId}.
+
+A estrutura do content para update_draft deve ser:
+{
+  "assunto": "${metadata.assunto}",
+  "codigo": "${metadata.codigo}",
+  "departamento": "${metadata.departamento}",
+  "revisao": "${metadata.revisao}",
+  "data_publicacao": "${metadata.data_publicacao}",
+  "data_vigencia": "${metadata.data_vigencia}",
+  "markdownContent": "# 1. Título\\n\\nConteúdo...\\n\\n# 2. Outro Título\\n\\nMais conteúdo..."
+}
+
+Use o campo "markdownContent" com o conteúdo em formato Markdown.
+`;
+    }
+  }
 
   const dynamicSystemInstruction = `${SYSTEM_INSTRUCTION}
 
@@ -30,21 +166,52 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
   ${docsContext}
   
   IMPORTANTE: Ao chamar ferramentas como 'edit_document', 'modify_document', etc., sempre use o 'Path' completo para garantir que o arquivo seja encontrado.
-  `;
+  ${activeDraftContext}`;
 
   // 2. Configura Modelo com as ferramentas do Python
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-2.5-pro",
     tools: tools,
     systemInstruction: dynamicSystemInstruction,
   });
 
   const chat: ChatSession = model.startChat();
 
-  let result = await chat.sendMessage(promptUsuario);
+  // Se há um draft ativo e o usuário parece querer modificar, adicionar instrução extra
+  let enhancedPrompt = promptUsuario;
+  if (activeDraftId) {
+    const modificationKeywords = [
+      'mude', 'altere', 'modifique', 'edite', 'troque', 'substitua',
+      'adicione', 'inclua', 'insira', 'remova', 'exclua', 'delete',
+      'corrija', 'ajuste', 'melhore', 'atualize',
+      'change', 'modify', 'edit', 'update', 'add', 'remove', 'fix'
+    ];
+    
+    const promptLower = promptUsuario.toLowerCase();
+    const isModificationRequest = modificationKeywords.some(kw => promptLower.includes(kw));
+    
+    if (isModificationRequest) {
+      enhancedPrompt = `${promptUsuario}
+
+IMPORTANTE: Para fazer esta modificação, você DEVE:
+1. Chamar get_draft com id=${activeDraftId}
+2. Fazer a modificação no conteúdo
+3. Chamar update_draft com id=${activeDraftId} e o conteúdo completo atualizado
+
+NÃO apenas descreva a modificação - EXECUTE as ferramentas.`;
+      console.log(`[Cliente] Detectada solicitação de modificação, prompt aprimorado`);
+    }
+  }
+
+  let result = await chat.sendMessage(enhancedPrompt);
 
   while (true) {
     const functionCalls = result.response.functionCalls();
+
+    console.log(`[Gemini] Function calls: ${functionCalls ? functionCalls.length : 0}`);
+    if (functionCalls) {
+      console.log(`[Gemini] Tools called: ${functionCalls.map(c => c.name).join(', ')}`);
+    }
 
     if (functionCalls && functionCalls.length > 0) {
       console.log(
@@ -160,6 +327,10 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
               safeArgs.title,
               safeArgs.content
             );
+            // Marcar que um draft foi criado/atualizado para notificar o frontend
+            draftWasUpdated = true;
+            updatedDraftId = draft.id;
+            console.log(`[Draft] Draft ${draft.id} was created, will notify frontend`);
             toolResult = `Draft created successfully. ID: ${draft.id}. Title: ${draft.title}. \nYou can now ask the user to review it or update it using 'update_draft'.`;
           } else if (name === "get_draft") {
             const { draftService } = require("../services/draftService");
@@ -175,27 +346,30 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
               safeArgs.id,
               safeArgs.content
             );
+            // Marcar que o draft foi atualizado para notificar o frontend
+            draftWasUpdated = true;
+            updatedDraftId = draft.id;
+            console.log(`[Draft] Draft ${draft.id} was updated, will notify frontend`);
             toolResult = `Draft updated successfully. ID: ${draft.id}.`;
           } else if (name === "generate_document_from_draft") {
             const { draftService } = require("../services/draftService");
-            // This returns { result: "...", filename: "..." }
             const genResult = await draftService.generateDocumentFromDraft(
               safeArgs.id
             );
 
-            // The result from draftService.generateDocumentFromDraft contains the output from the MCP tool
-            // We need to set toolResult to this output so the interception logic below can pick it up
-            toolResult = genResult.result;
+            console.log(`[Draft] Generated document filename: ${genResult.filename}`);
 
-            // We also need to ensure 'args' has the filename so the interception logic knows where to look
-            // The interception logic looks at 'args.filename' or 'args.output_path' etc.
-            // We can inject it into 'args' here for the subsequent logic
+            // Se tiver link do SharePoint, retornar na resposta
+            if (genResult.sharePointLink) {
+              toolResult = `✅ Documento gerado com sucesso!\n\n📄 Arquivo: ${genResult.filename}\n🔗 Link do SharePoint: ${genResult.sharePointLink}\n\nVocê pode acessar e editar o documento diretamente pelo link acima.`;
+            } else {
+              toolResult = `✅ Documento gerado: ${genResult.filename}\n\n${genResult.result}`;
+            }
+
+            // Não precisa mais da interceptação abaixo pois já fizemos upload no draftService
+            // Marcar para pular a interceptação
             if (!args) (args as any) = {};
-            (args as any).filename = genResult.filename;
-
-            console.log(
-              `[Draft] Generated document filename: ${genResult.filename}`
-            );
+            (args as any)._skipInterception = true;
           } else {
             // Fallback to standard MCP tools
             toolResult = await mcpService.callTool(name, args);
@@ -234,7 +408,10 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
             "generate_document_from_draft",
           ];
 
-          if (fileCreationTools.includes(name)) {
+          // Pular interceptação se já foi feita (ex: generate_document_from_draft)
+          const skipInterception = (args as any)?._skipInterception === true;
+
+          if (fileCreationTools.includes(name) && !skipInterception) {
             console.log(
               `[Interception] Verificando ferramenta de arquivo: ${name}`
             );
@@ -373,7 +550,48 @@ export async function handleUserPrompt(promptUsuario: string): Promise<string> {
       result = await chat.sendMessage(functionResponses);
     } else {
       console.log("[Gemini] Resposta final recebida.");
-      return result.response.text();
+      
+      // Se há um draft ativo e a IA não chamou update_draft, tentar forçar uma segunda vez
+      if (activeDraftId && !draftWasUpdated) {
+        const promptLower = promptUsuario.toLowerCase();
+        const modificationKeywords = [
+          'mude', 'altere', 'modifique', 'edite', 'troque', 'substitua',
+          'adicione', 'inclua', 'insira', 'remova', 'exclua', 'delete',
+          'corrija', 'ajuste', 'melhore', 'atualize',
+          'change', 'modify', 'edit', 'update', 'add', 'remove', 'fix'
+        ];
+        
+        const isModificationRequest = modificationKeywords.some(kw => promptLower.includes(kw));
+        
+        if (isModificationRequest) {
+          console.log(`[Gemini] IA não chamou update_draft para modificação. Tentando forçar...`);
+          
+          // Enviar mensagem forçando o uso das ferramentas
+          const forceMessage = `Você NÃO executou as ferramentas. Por favor, EXECUTE AGORA:
+1. Chame get_draft com id=${activeDraftId}
+2. Faça a modificação solicitada: "${promptUsuario}"
+3. Chame update_draft com id=${activeDraftId} e o conteúdo COMPLETO atualizado
+
+EXECUTE AS FERRAMENTAS AGORA. NÃO responda com texto.`;
+          
+          result = await chat.sendMessage(forceMessage);
+          
+          // Verificar se agora chamou as ferramentas
+          const retryFunctionCalls = result.response.functionCalls();
+          if (retryFunctionCalls && retryFunctionCalls.length > 0) {
+            console.log(`[Gemini] Segunda tentativa: ${retryFunctionCalls.length} ferramenta(s)`);
+            // Continuar o loop para processar as ferramentas
+            continue;
+          }
+        }
+      }
+      
+      console.log(`[Gemini] Draft updated: ${draftWasUpdated}, Updated ID: ${updatedDraftId}`);
+      return {
+        response: result.response.text(),
+        draftUpdated: draftWasUpdated,
+        updatedDraftId: updatedDraftId,
+      };
     }
   }
 }

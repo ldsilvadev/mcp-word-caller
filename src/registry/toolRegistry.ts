@@ -48,17 +48,17 @@ export async function getAllTools(): Promise<Tool[]> {
       },
       {
         name: "update_draft",
-        description: "Updates the content of an existing draft.",
+        description: "MUST be used to update/modify/edit an existing draft. When user asks to change, modify, edit, add, remove, or update ANY content in the current document/draft, you MUST call this function with the draft ID and the COMPLETE updated content. Always call get_draft first to get current content, then modify it, then call update_draft.",
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
             id: {
               type: SchemaType.NUMBER,
-              description: "ID of the draft",
+              description: "ID of the draft to update",
             },
             content: {
               type: SchemaType.OBJECT,
-              description: "New JSON content for the draft",
+              description: "Complete updated JSON content for the draft. Must include all sections (secao) with titulo and paragrafo.",
               properties: {},
             },
           },

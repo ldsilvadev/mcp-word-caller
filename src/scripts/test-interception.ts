@@ -12,7 +12,7 @@ async function main() {
   // 1. Setup: Create a dummy file
   const filename = "Test_Interception.docx";
   const filePath = path.join(
-    "C:\\Users\\lucas\\Documents\\MCP\\mcp-word-caller\\output",
+    "/Users/nicolas-ginfo/Desktop/teste MCP doc/mcp-word-caller/output",
     filename
   );
 

@@ -12,5 +12,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # OnlyOffice Document Server - Editor de documentos igual ao Word
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: mcp_onlyoffice
+    ports:
+      - "8080:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=mcp_onlyoffice_secret_key_change_in_production
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  onlyoffice_data:
+  onlyoffice_logs:

@@ -4,9 +4,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Tool } from "@google/generative-ai";
 
 const PYTHON_PATH =
-  "C:\\Users\\dasilva.lucas\\Documents\\MCP\\office-word-mcp-server\\venv\\Scripts\\python.exe";
+  "C:\\Users\\lucas\\Documents\\POC MCP\\office-word-mcp-server\\venv\\Scripts\\python";
 const MCP_SERVER_DIR =
-  "C:\\Users\\dasilva.lucas\\Documents\\MCP\\office-word-mcp-server";
+  "C:\\Users\\lucas\\Documents\\POC MCP\\office-word-mcp-server";
+
 
 export class McpService {
   private client: Client;

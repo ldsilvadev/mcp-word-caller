@@ -45,23 +45,35 @@ export class SharePointService {
     return null; 
   }
 
-  private async uploadSmallFileWithRetry(client: Client, folderName: string, filename: string, content: Buffer): Promise<any> {
+  private async uploadSmallFileWithRetry(client: Client, folderName: string, filename: string, content: Buffer, maxRetries: number = 3): Promise<any> {
       // ⚠️ MUDANÇA AQUI: Usamos getDrivePath() em vez de /me/drive
       const endpoint = `${this.getDrivePath()}/root:/${folderName}/${filename}:/content`;
       
-      try {
-          // O Bot tem permissão de "System", então ele tem mais chance de
-          // forçar a atualização (Nova Versão) do que o usuário delegado.
-          const response = await client.api(endpoint)
-              .header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-              .put(content);
-          
-          console.log(`[SharePoint] Upload success. ID: ${response.id}`);
-          return response;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            // O Bot tem permissão de "System", então ele tem mais chance de
+            // forçar a atualização (Nova Versão) do que o usuário delegado.
+            const response = await client.api(endpoint)
+                .header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                .put(content);
+            
+            console.log(`[SharePoint] Upload success. ID: ${response.id}`);
+            return response;
 
-      } catch (error: any) {
-          console.error(`[SharePoint] Error uploading:`, error.message);
-          throw error;
+        } catch (error: any) {
+            const isLocked = error.message?.includes("locked") || 
+                             error.code === "notAllowed" ||
+                             error.statusCode === 423;
+            
+            if (isLocked && attempt < maxRetries) {
+              console.log(`[SharePoint] File is locked. Waiting 3 seconds before retry ${attempt + 1}/${maxRetries}...`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              continue;
+            }
+            
+            console.error(`[SharePoint] Error uploading (attempt ${attempt}):`, error.message);
+            throw error;
+        }
       }
   }
 

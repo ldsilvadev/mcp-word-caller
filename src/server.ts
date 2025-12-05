@@ -21,15 +21,50 @@ fastify.register(cors, {
 
 fastify.register(multipart);
 
+// Health check endpoint
+fastify.get("/health", async () => {
+  return { status: "ok", timestamp: new Date().toISOString() };
+});
+
+// Interface para conteúdo do editor
+interface EditorContent {
+  markdown: string;
+  metadata: {
+    assunto: string;
+    codigo: string;
+    departamento: string;
+    revisao: string;
+    data_publicacao: string;
+    data_vigencia: string;
+  };
+}
+
 // Chat Endpoint
 fastify.post("/chat", async (request, reply) => {
-  const { message } = request.body as { message: string };
+  console.log("[Chat] Received request");
+  const body = request.body as { 
+    message: string; 
+    activeDraftId?: number | null;
+    currentEditorContent?: EditorContent | null;
+  };
+  
+  console.log("[Chat] Message:", body.message?.substring(0, 100));
+  console.log("[Chat] Active Draft ID:", body.activeDraftId);
+  console.log("[Chat] Has editor content:", !!body.currentEditorContent);
+  
   try {
-    const response = await handleUserPrompt(message);
-    return { response };
+    const result = await handleUserPrompt(
+      body.message, 
+      body.activeDraftId, 
+      body.currentEditorContent
+    );
+    console.log("[Chat] Success, draft updated:", result.draftUpdated);
+    return result;
   } catch (error: any) {
+    console.error("[Chat] ERROR:", error.message);
+    console.error("[Chat] Stack:", error.stack);
     request.log.error(error);
-    return reply.status(500).send({ error: error.message });
+    return reply.status(500).send({ error: error.message || "Unknown error" });
   }
 });
 
@@ -137,13 +172,13 @@ fastify.put("/drafts/:id", async (request, reply) => {
   }
 });
 
-// Generate Document from Draft
+// Generate Document from Draft (local only, no SharePoint upload)
 fastify.post("/drafts/:id/generate", async (request, reply) => {
   const { id } = request.params as { id: string };
   const { draftService } = require("./services/draftService");
 
   try {
-    const result = await draftService.generateDocumentFromDraft(parseInt(id));
+    const result = await draftService.generateDocumentFromDraft(parseInt(id), false);
     return result;
   } catch (error: any) {
     request.log.error(error);
@@ -151,6 +186,112 @@ fastify.post("/drafts/:id/generate", async (request, reply) => {
       .status(500)
       .send({ error: "Failed to generate document from draft" });
   }
+});
+
+// Publish Draft - Generate and upload to SharePoint
+fastify.post("/drafts/:id/publish", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { draftService } = require("./services/draftService");
+
+  try {
+    const result = await draftService.publishDraft(parseInt(id));
+    return result;
+  } catch (error: any) {
+    request.log.error(error);
+    return reply
+      .status(500)
+      .send({ error: "Failed to publish draft" });
+  }
+});
+
+// ---------------------------------------------------------
+// OnlyOffice Integration Endpoints
+// ---------------------------------------------------------
+
+// Get OnlyOffice editor config for a draft
+fastify.get("/onlyoffice/config/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { onlyofficeService } = require("./services/onlyofficeService");
+  const { draftService } = require("./services/draftService");
+
+  try {
+    const draft = await draftService.getDraft(parseInt(id));
+    if (!draft) {
+      return reply.status(404).send({ error: "Draft not found" });
+    }
+
+    const filename = `${draft.title.replace(/[^a-z0-9]/gi, "_")}.docx`;
+    const config = await onlyofficeService.getEditorConfig(parseInt(id), filename);
+    
+    return {
+      config,
+      serverUrl: onlyofficeService.getServerUrl(),
+    };
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ error: "Failed to get OnlyOffice config" });
+  }
+});
+
+// Serve document file for OnlyOffice
+// SEMPRE regenera o documento a partir do draft atual para garantir conteúdo atualizado
+fastify.get("/onlyoffice/document/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { draftService } = require("./services/draftService");
+
+  try {
+    const draft = await draftService.getDraft(parseInt(id));
+    if (!draft) {
+      return reply.status(404).send({ error: "Draft not found" });
+    }
+
+    // SEMPRE gerar documento a partir do draft atual
+    // Isso garante que o OnlyOffice sempre receba o conteúdo mais recente
+    console.log(`[OnlyOffice] Generating document for draft ${id}...`);
+    const result = await draftService.generateDocumentFromDraft(parseInt(id), false);
+    const filePath = result.outputPath;
+
+    // Aguardar arquivo ser criado
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const fileBuffer = await fs.readFile(filePath);
+    
+    console.log(`[OnlyOffice] Serving document: ${filePath} (${fileBuffer.length} bytes)`);
+    
+    reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    reply.header("Content-Disposition", `attachment; filename="${path.basename(filePath)}"`);
+    
+    return fileBuffer;
+  } catch (error: any) {
+    request.log.error(error);
+    console.error(`[OnlyOffice] Error serving document:`, error);
+    return reply.status(500).send({ error: "Failed to serve document" });
+  }
+});
+
+// OnlyOffice callback endpoint (called when document is saved)
+fastify.post("/onlyoffice/callback/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const { onlyofficeService } = require("./services/onlyofficeService");
+
+  try {
+    const result = await onlyofficeService.processCallback(parseInt(id), request.body);
+    return result;
+  } catch (error: any) {
+    request.log.error(error);
+    return { error: 1 };
+  }
+});
+
+// Check if OnlyOffice is available
+fastify.get("/onlyoffice/status", async (request, reply) => {
+  const { onlyofficeService } = require("./services/onlyofficeService");
+  
+  const available = await onlyofficeService.isAvailable();
+  return { 
+    available,
+    serverUrl: onlyofficeService.getServerUrl(),
+  };
 });
 
 const start = async () => {
