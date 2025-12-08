@@ -45,7 +45,7 @@ export async function handleUserPrompt(
   const { documentService } = require("../services/documentService");
   const docs = await documentService.getAllDocuments();
   const outputDir =
-    "C:\\Users\\dasilva.lucas\\Documents\\MCP-WORD\\mcp-word-caller\\output";
+    "C:\\Users\\lucas\\Documents\\POC MCP\\mcp-word-caller\\output";
 
   const docsContext = docs
     .map((d: any) => {
@@ -64,22 +64,77 @@ export async function handleUserPrompt(
       const filePath = await draftService.getDraftFilePath(activeDraftId);
       const metadata = content?.metadata || {};
 
-      // Extrair texto do documento Word para contexto
-      let documentText = "";
+      // Verificar se o documento foi publicado (arquivo local não existe mais)
+      const isPublished = activeDraft.status === "published";
+      let fileExists = false;
+      
       if (filePath) {
         try {
-          const mammoth = require("mammoth");
           const fs = require("fs");
-          const buffer = fs.readFileSync(filePath);
-          const result = await mammoth.extractRawText({ buffer });
-          documentText = result.value?.substring(0, 4000) || "";
-          console.log(`[Cliente] Texto extraído do Word (${documentText.length} chars)`);
-        } catch (e) {
-          console.log(`[Cliente] Não foi possível extrair texto do Word:`, e);
+          fileExists = fs.existsSync(filePath);
+        } catch {
+          fileExists = false;
         }
       }
 
-      activeDraftContext = `
+      // Se publicado ou arquivo não existe, informar a IA
+      if (isPublished || !fileExists) {
+        console.log(`[Cliente] Documento publicado ou arquivo não existe. Status: ${activeDraft.status}, FileExists: ${fileExists}`);
+        
+        activeDraftContext = `
+
+=== ⚠️ DOCUMENTO PUBLICADO - SEM ACESSO LOCAL ===
+O documento "${activeDraft.title}" foi EXPORTADO e o arquivo local foi REMOVIDO.
+
+- ID do Draft: ${activeDraftId}
+- Status: ${activeDraft.status}
+- Download URL: ${content?.downloadUrl || "Disponível via botão Baixar"}
+
+🚫 VOCÊ NÃO PODE EDITAR ESTE DOCUMENTO!
+O arquivo .docx não existe mais localmente.
+
+SE O USUÁRIO PEDIR PARA EDITAR, RESPONDA:
+"O documento já foi exportado e o arquivo local foi removido. Para continuar editando:
+1. Baixe o documento usando o botão 'Baixar' no painel direito
+2. Clique no ícone 📎 (clipe) ao lado do campo de mensagem
+3. Selecione o arquivo .docx baixado
+4. Clique em 'Importar'
+
+Assim o documento será importado novamente e poderei fazer as modificações!"
+`;
+      } else {
+        // Documento disponível para edição - extrair texto
+        let documentText = "";
+        if (filePath) {
+          try {
+            const mammoth = require("mammoth");
+            const fs = require("fs");
+            const buffer = fs.readFileSync(filePath);
+            const result = await mammoth.extractRawText({ buffer });
+            documentText = result.value?.substring(0, 4000) || "";
+            console.log(`[Cliente] Texto extraído do Word (${documentText.length} chars)`);
+          } catch (e) {
+            console.log(`[Cliente] Não foi possível extrair texto do Word:`, e);
+          }
+        }
+
+        // Extrair e numerar seções do markdownContent para facilitar identificação
+        let sectionsList = "";
+        const markdownContent = content?.markdownContent || "";
+        if (markdownContent) {
+          const sectionMatches = markdownContent.match(/^###\s+(.+)$/gm) || [];
+          if (sectionMatches.length > 0) {
+            sectionsList = "\n\nESTRUTURA DE SEÇÕES DO DOCUMENTO (USE ESTES NÚMEROS):\n";
+            sectionMatches.forEach((match: string, index: number) => {
+              const title = match.replace(/^###\s+/, "").trim();
+              sectionsList += `  Seção ${index + 1}: "${title}"\n`;
+            });
+            sectionsList += `\nTotal: ${sectionMatches.length} seções\n`;
+            sectionsList += `IMPORTANTE: Quando o usuário mencionar "seção 4", modifique a seção listada como "Seção 4" acima.\n`;
+          }
+        }
+
+        activeDraftContext = `
 
 === DOCUMENTO ATIVO NO EDITOR ===
 O usuário está editando o seguinte documento:
@@ -95,30 +150,36 @@ METADADOS DO DOCUMENTO:
 - Revisão: ${metadata.revisao || "01"}
 - Data Publicação: ${metadata.data_publicacao || "---"}
 - Data Vigência: ${metadata.data_vigencia || "---"}
+${sectionsList}
+CONTEÚDO ATUAL DO DOCUMENTO (preview):
+${documentText.substring(0, 2000)}${documentText.length > 2000 ? '...' : ''}
 
-CONTEÚDO ATUAL DO DOCUMENTO:
-${documentText}
+=== ⚠️ COMO MODIFICAR O DOCUMENTO (CRÍTICO) ===
+O documento já existe em: ${filePath}
 
-=== COMO MODIFICAR O DOCUMENTO ===
-Para modificar este documento, você DEVE usar as ferramentas MCP de edição de Word diretamente no arquivo:
-- Caminho do arquivo: ${filePath}
+🚫 NUNCA USE: update_draft + generate_document_from_draft
+   Isso APAGA formatação, tabelas manuais e edições do usuário!
 
-Ferramentas disponíveis para edição:
-- replace_text: Substituir texto no documento
-- add_paragraph: Adicionar parágrafo
-- modify_paragraph: Modificar parágrafo existente
-- insert_paragraph_after: Inserir parágrafo após outro
-- search_and_replace: Buscar e substituir texto
-- edit_document: Edição geral do documento
+✅ SEMPRE USE as ferramentas de SEÇÃO para editar:
+
+| Ação | Ferramenta |
+|------|------------|
+| Adicionar texto | append_to_section("${filePath}", N, "texto") |
+| Mudar título | edit_section_title("${filePath}", N, "novo titulo") |
+| Reescrever seção | replace_section_content("${filePath}", N, "conteudo") |
+| Adicionar tabela | append_table_to_section("${filePath}", N, [...]) |
+| Ver estrutura | list_document_sections("${filePath}") |
+
+Onde N = número da seção (1, 2, 3, etc.)
 
 IMPORTANTE:
-1. Use SEMPRE o caminho do arquivo: ${filePath}
-2. Após modificar, o OnlyOffice recarregará automaticamente
-3. NÃO use update_draft para modificar conteúdo - use as ferramentas MCP diretamente
-4. update_draft só deve ser usado para criar novos drafts
+1. Use SEMPRE o caminho: ${filePath}
+2. Ferramentas de seção PRESERVAM formatação e conteúdo manual
+3. Após modificar, o OnlyOffice recarrega automaticamente
 `;
-    }
-  }
+      } // end else (documento disponível)
+    } // end if (activeDraft)
+  } // end if (activeDraftId)
 
   const dynamicSystemInstruction = `${SYSTEM_INSTRUCTION}
 
@@ -136,14 +197,17 @@ ${activeDraftContext}`;
     { role: "system", content: dynamicSystemInstruction },
   ];
 
-  // Se há um draft ativo e o usuário parece querer modificar, adicionar instrução extra
+  // Se há um draft ativo e o usuário parece querer modificar, instruir uso de ferramentas de seção
   let enhancedPrompt = promptUsuario;
   if (activeDraftId) {
+    const { draftService } = require("../services/draftService");
+    const filePath = await draftService.getDraftFilePath(activeDraftId);
+    
     const modificationKeywords = [
       "mude", "altere", "modifique", "edite", "troque", "substitua",
       "adicione", "inclua", "insira", "remova", "exclua", "delete",
-      "corrija", "ajuste", "melhore", "atualize", "crie",
-      "change", "modify", "edit", "update", "add", "remove", "fix", "create",
+      "corrija", "ajuste", "melhore", "atualize",
+      "change", "modify", "edit", "update", "add", "remove", "fix",
     ];
 
     const promptLower = promptUsuario.toLowerCase();
@@ -151,17 +215,25 @@ ${activeDraftContext}`;
       promptLower.includes(kw)
     );
 
-    if (isModificationRequest) {
+    if (isModificationRequest && filePath) {
       enhancedPrompt = `${promptUsuario}
 
-IMPORTANTE: Para fazer esta modificação, você DEVE:
-1. Chamar get_draft com id=${activeDraftId}
-2. Fazer a modificação no conteúdo
-3. Chamar update_draft com id=${activeDraftId} e o conteúdo completo atualizado
+⚠️ IMPORTANTE - USE FERRAMENTAS DE SEÇÃO (NÃO update_draft):
+O documento já existe em: ${filePath}
 
-NÃO apenas descreva a modificação - EXECUTE as ferramentas.`;
+Para fazer esta modificação, você DEVE usar as ferramentas de edição de seção:
+- list_document_sections("${filePath}") - Ver estrutura do documento
+- append_to_section("${filePath}", numero_secao, "texto") - Adicionar texto
+- edit_section_title("${filePath}", numero_secao, "novo titulo") - Mudar título
+- replace_section_content("${filePath}", numero_secao, "novo conteudo") - Substituir conteúdo
+- append_table_to_section("${filePath}", numero_secao, [...], "texto antes", "texto depois") - Adicionar tabela
+
+❌ NÃO USE update_draft - isso apaga formatação e conteúdo manual!
+✅ USE as ferramentas de seção acima - preservam tudo!
+
+EXECUTE as ferramentas agora.`;
       console.log(
-        `[Cliente] Detectada solicitação de modificação, prompt aprimorado`
+        `[Cliente] Detectada solicitação de modificação - instruindo uso de ferramentas de seção`
       );
     }
   }
@@ -245,33 +317,52 @@ NÃO apenas descreva a modificação - EXECUTE as ferramentas.`;
       // Resposta final sem tool calls
       console.log("[OpenAI] Resposta final recebida.");
 
-      // Se há um draft ativo e a IA não chamou update_draft, tentar forçar
-      if (activeDraftId && !draftWasUpdated) {
+      // Se há um draft ativo e a IA não executou ferramentas de edição, tentar forçar
+      if (activeDraftId) {
+        const { draftService } = require("../services/draftService");
+        const filePath = await draftService.getDraftFilePath(activeDraftId);
+        
         const promptLower = promptUsuario.toLowerCase();
         const modificationKeywords = [
           "mude", "altere", "modifique", "edite", "troque", "substitua",
           "adicione", "inclua", "insira", "remova", "exclua", "delete",
-          "corrija", "ajuste", "melhore", "atualize", "crie",
-          "change", "modify", "edit", "update", "add", "remove", "fix", "create",
+          "corrija", "ajuste", "melhore", "atualize",
+          "change", "modify", "edit", "update", "add", "remove", "fix",
         ];
 
         const isModificationRequest = modificationKeywords.some((kw) =>
           promptLower.includes(kw)
         );
 
-        if (isModificationRequest) {
+        // Verificar se a IA executou alguma ferramenta de edição de seção
+        const sectionToolsUsed = messages.some((msg: any) => 
+          msg.role === "tool" && 
+          (msg.content?.includes("append_to_section") || 
+           msg.content?.includes("edit_section_title") ||
+           msg.content?.includes("replace_section_content") ||
+           msg.content?.includes("append_table_to_section") ||
+           msg.content?.includes("Section") ||
+           msg.content?.includes("✅"))
+        );
+
+        if (isModificationRequest && filePath && !sectionToolsUsed && !draftWasUpdated) {
           console.log(
-            `[OpenAI] IA não chamou update_draft para modificação. Tentando forçar...`
+            `[OpenAI] IA não executou ferramentas de seção. Tentando forçar...`
           );
 
           messages.push({
             role: "user",
-            content: `Você NÃO executou as ferramentas. Por favor, EXECUTE AGORA:
-1. Chame get_draft com id=${activeDraftId}
-2. Faça a modificação solicitada: "${promptUsuario}"
-3. Chame update_draft com id=${activeDraftId} e o conteúdo COMPLETO atualizado
+            content: `Você NÃO executou as ferramentas de edição. Por favor, EXECUTE AGORA usando o arquivo: ${filePath}
 
-EXECUTE AS FERRAMENTAS AGORA. NÃO responda com texto.`,
+Use UMA destas ferramentas (NÃO use update_draft):
+- append_to_section("${filePath}", numero_secao, "texto") - Para adicionar texto
+- edit_section_title("${filePath}", numero_secao, "novo titulo") - Para mudar título  
+- replace_section_content("${filePath}", numero_secao, "conteudo") - Para substituir
+- append_table_to_section("${filePath}", numero_secao, [...]) - Para adicionar tabela
+
+Solicitação original: "${promptUsuario}"
+
+EXECUTE A FERRAMENTA APROPRIADA AGORA.`,
           });
 
           // Continuar o loop para processar
@@ -383,6 +474,16 @@ Para modificar o documento, use as ferramentas MCP de edição de Word diretamen
     console.log("[Draft] update_draft - redirecionando para edição via MCP");
     
     if (safeArgs.content?.markdownContent) {
+      // Log das seções para debug
+      const markdownContent = safeArgs.content.markdownContent;
+      const sectionMatches = markdownContent.match(/^###\s+(.+)$/gm) || [];
+      console.log(`[Draft] Seções no markdownContent enviado pela IA:`);
+      sectionMatches.forEach((match: string, index: number) => {
+        const title = match.replace(/^###\s+/, "").trim();
+        console.log(`  Seção ${index + 1}: "${title}"`);
+      });
+      console.log(`[Draft] Total: ${sectionMatches.length} seções`);
+      
       // Se a IA enviou markdownContent, regenerar o documento
       const draft = await draftService.updateDraft(safeArgs.id, safeArgs.content, true);
       options.onDraftUpdated(draft.id);
@@ -402,6 +503,43 @@ Para modificar o documento, use as ferramentas MCP de edição de Word diretamen
   } else {
     // Fallback to standard MCP tools
     toolResult = await mcpService.callTool(name, args);
+
+    // Detectar ferramentas de edição de seção e notificar para reload do OnlyOffice
+    const sectionEditingTools = [
+      "append_to_section",
+      "replace_section_content", 
+      "edit_section_title",
+      "append_table_to_section",
+      "list_document_sections",
+      "get_section_content",
+    ];
+    
+    if (sectionEditingTools.includes(name)) {
+      console.log(`[Exec] Ferramenta de seção executada: ${name}`);
+      console.log(`[Exec] Resultado: ${typeof toolResult === 'string' ? toolResult.substring(0, 200) : JSON.stringify(toolResult).substring(0, 200)}`);
+      
+      // Se a ferramenta modificou o documento (não apenas leitura), notificar
+      const modifyingTools = ["append_to_section", "replace_section_content", "edit_section_title", "append_table_to_section"];
+      const resultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+      const isSuccess = resultStr.includes("✅") || resultStr.includes("success") || resultStr.includes("inserted") || resultStr.includes("appended") || resultStr.includes("replaced") || resultStr.includes("changed");
+      
+      if (modifyingTools.includes(name) && isSuccess) {
+        // Extrair o draftId do filename se possível
+        const filename = safeArgs.filename || targetFile;
+        console.log(`[Exec] Ferramenta de modificação bem-sucedida. Filename: ${filename}`);
+        
+        if (filename) {
+          const { draftService } = require("../services/draftService");
+          const draftId = await draftService.getDraftIdByFilePath(filename);
+          if (draftId) {
+            console.log(`[Exec] ✅ Documento modificado via ferramenta de seção. Draft ID: ${draftId} - Notificando frontend para reload`);
+            options.onDraftUpdated(draftId);
+          } else {
+            console.log(`[Exec] ⚠️ Não foi possível encontrar draft para o arquivo: ${filename}`);
+          }
+        }
+      }
+    }
 
     // Interceptar criação de arquivos para upload ao SharePoint
     toolResult = await interceptFileCreation(name, args, toolResult);
@@ -481,33 +619,29 @@ async function interceptFileCreation(
   args: any,
   toolResult: any
 ): Promise<string> {
+  // Ferramentas de seção NÃO devem fazer upload ao SharePoint
+  // Elas apenas editam o documento local
+  const sectionTools = [
+    "append_to_section",
+    "replace_section_content",
+    "edit_section_title",
+    "append_table_to_section",
+    "list_document_sections",
+    "get_section_content",
+    "add_section_with_inherited_formatting",
+  ];
+  
+  if (sectionTools.includes(name)) {
+    // Não interceptar ferramentas de seção - elas só editam localmente
+    return typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+  }
+
   const fileCreationTools = [
     "create_word_document",
     "create_policy_document",
     "fill_document_simple",
     "fill_document_template",
     "merge_documents",
-    "edit_document",
-    "modify_document",
-    "update_document",
-    "replace_paragraph_block_below_header",
-    "replace_block_between_manual_anchors",
-    "set_table_column_width",
-    "set_table_column_widths",
-    "set_table_width",
-    "auto_fit_table_columns",
-    "format_table_cell_text",
-    "set_table_cell_padding",
-    "replace_text",
-    "modify_paragraph",
-    "edit_paragraph_text",
-    "search_and_replace",
-    "insert_line_or_paragraph_near_text",
-    "insert_paragraph_after",
-    "edit_header_footer",
-    "insert_text_inline",
-    "add_paragraph",
-    "add_section_with_inherited_formatting",
   ];
 
   if (!fileCreationTools.includes(name)) {

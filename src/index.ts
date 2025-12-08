@@ -21,6 +21,7 @@ const promptDoUsuario = `
   Diretrizes:
   1. Crie no mínimo 12 seções textuais bem elaboradas utilizando seu conhecimento.
   2. Crie uma utlima seção com um titulo "Observações Finais" e uma tabela com as seguintes colunas, Cargo, Quantidade, Possui,  preencha essa tabela com seus conhecimentos.
+  3. Adicione uma tabela na seção 7 com as seguintes colunas, Cargo, Quantidade Por Litro, Possui,  preencha essa tabela com seus conhecimentos.
 
   Adicione uma nova seção com um titulo "Observações finais" e uma tabela com as seguintes colunas, Cargo, Quantidade, Possui,  preencha essa tabela com seus conhecimentos.
 

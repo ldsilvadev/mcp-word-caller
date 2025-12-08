@@ -180,6 +180,8 @@ fastify.get("/drafts/:id/status", async (request, reply) => {
       fileExists,
       fileModifiedAt,
       lastModified: content?.lastModified || null,
+      downloadUrl: content?.downloadUrl || null,
+      publishedAt: content?.publishedAt || null,
       metadata: content?.metadata || null,
     };
   } catch (error: any) {
@@ -234,6 +236,57 @@ fastify.post("/drafts/:id/publish", async (request, reply) => {
   } catch (error: any) {
     request.log.error(error);
     return reply.status(500).send({ error: "Failed to publish draft" });
+  }
+});
+
+// ---------------------------------------------------------
+// UPLOAD/IMPORT DOCUMENT ENDPOINT
+// ---------------------------------------------------------
+
+// Upload documento para criar novo draft editável
+fastify.post("/drafts/upload", async (request, reply) => {
+  const { draftService } = require("./services/draftService");
+  const { supabaseService } = require("./services/supabaseService");
+
+  try {
+    const data = await request.file();
+    if (!data) {
+      return reply.status(400).send({ error: "No file uploaded" });
+    }
+
+    const filename = data.filename;
+    if (!filename.endsWith(".docx")) {
+      return reply.status(400).send({ error: "Only .docx files are supported" });
+    }
+
+    console.log(`[Upload] Receiving file: ${filename}`);
+
+    // Salvar arquivo temporariamente
+    const OUTPUT_DIR = path.join(__dirname, "../output");
+    const tempFilename = `uploaded_${Date.now()}_${filename}`;
+    const localPath = path.join(OUTPUT_DIR, tempFilename);
+
+    // Garantir que o diretório existe
+    await fs.mkdir(OUTPUT_DIR, { recursive: true });
+
+    // Salvar o arquivo
+    const buffer = await data.toBuffer();
+    await fs.writeFile(localPath, buffer);
+    console.log(`[Upload] File saved locally: ${localPath} (${buffer.length} bytes)`);
+
+    // Criar draft vinculado ao arquivo
+    const draft = await draftService.createDraftFromUpload(filename, tempFilename);
+    console.log(`[Upload] Draft created: ${draft.id}`);
+
+    return {
+      success: true,
+      draftId: draft.id,
+      filename: tempFilename,
+      message: "Documento importado com sucesso! Agora você pode editá-lo.",
+    };
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ error: "Failed to upload document: " + error.message });
   }
 });
 

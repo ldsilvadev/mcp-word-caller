@@ -59,7 +59,33 @@ function generateSafeFilename(title: string): string {
  */
 function parseMarkdownToStructure(markdownContent: string, metadata: DraftMetadata): any {
   const secao: any[] = [];
-  const lines = markdownContent.split("\n");
+  
+  // PROTEÇÃO: Se o markdown não tem nenhum heading (###), tentar detectar seções por padrão de título
+  // Isso evita documentos vazios quando a IA esquece de incluir ###
+  let processedContent = markdownContent;
+  
+  // Verificar se tem pelo menos um heading válido
+  const hasValidHeadings = /^#{1,3}\s+/m.test(markdownContent);
+  
+  if (!hasValidHeadings && markdownContent.trim().length > 0) {
+    console.warn("[Parser] AVISO: Markdown sem headings (###) detectado. Tentando recuperar estrutura...");
+    
+    // Tentar detectar padrões de título (linha curta seguida de linha vazia e texto)
+    // Padrão: "Objetivo\n\nTexto..." -> "### Objetivo\n\nTexto..."
+    processedContent = markdownContent.replace(
+      /^([A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇ][a-záéíóúàèìòùâêîôûãõç\s]{2,50})\n\n/gm,
+      (match, title) => {
+        // Só converter se parecer um título (não muito longo, começa com maiúscula)
+        if (title.length < 50 && !title.includes('.')) {
+          console.log(`[Parser] Convertendo "${title}" para heading`);
+          return `### ${title}\n\n`;
+        }
+        return match;
+      }
+    );
+  }
+  
+  const lines = processedContent.split("\n");
 
   let currentSection: any = null;
   let currentParagraphs: string[] = [];
@@ -171,6 +197,15 @@ function parseMarkdownToStructure(markdownContent: string, metadata: DraftMetada
     if (!s.paragrafo) s.paragrafo = "";
     s.paragrafo = s.paragrafo.trim();
   });
+
+  // PROTEÇÃO: Alertar se o documento ficou vazio
+  if (secao.length === 0 && markdownContent.trim().length > 0) {
+    console.error("[Parser] ERRO CRÍTICO: Markdown com conteúdo resultou em 0 seções!");
+    console.error("[Parser] Conteúdo recebido (primeiros 500 chars):", markdownContent.substring(0, 500));
+    console.error("[Parser] Verifique se os títulos têm o prefixo ### (ex: ### Objetivo)");
+  } else {
+    console.log(`[Parser] Markdown processado: ${secao.length} seções criadas`);
+  }
 
   return { ...metadata, secao };
 }
@@ -390,11 +425,29 @@ export const draftService = {
       uploadRes.publicUrl
     );
 
-    // Atualizar status do draft
+    // Atualizar status do draft e salvar URL de download
+    const updatedContent = {
+      ...content,
+      downloadUrl: uploadRes.publicUrl,
+      storagePath: uploadRes.path,
+      publishedAt: new Date().toISOString(),
+    };
+    
     await prisma.draft.update({
       where: { id },
-      data: { status: "published" },
+      data: { 
+        status: "published",
+        content: updatedContent as any,
+      },
     });
+
+    // Remover arquivo local após upload bem-sucedido
+    try {
+      fs.unlinkSync(fullPath);
+      console.log(`[Publish] ✅ Arquivo local removido: ${fullPath}`);
+    } catch (deleteError) {
+      console.warn(`[Publish] ⚠️ Não foi possível remover arquivo local: ${fullPath}`, deleteError);
+    }
 
     return {
       result: "Documento publicado com sucesso",
@@ -430,5 +483,87 @@ export const draftService = {
     }
 
     throw new Error(`Document file not found: ${fullPath}`);
+  },
+
+  /**
+   * Obtém o ID do draft pelo caminho do arquivo
+   * Usado para identificar qual draft foi modificado pelas ferramentas de seção
+   */
+  async getDraftIdByFilePath(filePath: string): Promise<number | null> {
+    try {
+      // Extrair apenas o nome do arquivo
+      const filename = path.basename(filePath);
+      
+      // Buscar todos os drafts e verificar qual tem esse arquivo
+      const drafts = await prisma.draft.findMany({
+        where: { status: { not: "deleted" } },
+        orderBy: { id: "desc" },
+      });
+
+      for (const draft of drafts) {
+        const content = draft.content as any;
+        if (content?.filePath) {
+          const draftFilename = path.basename(content.filePath);
+          // Comparar por nome do arquivo ou caminho completo
+          if (draftFilename === filename || content.filePath === filePath || 
+              path.join(OUTPUT_DIR, content.filePath) === filePath) {
+            console.log(`[Draft] Found draft ${draft.id} for file: ${filename}`);
+            return draft.id;
+          }
+        }
+      }
+
+      console.log(`[Draft] No draft found for file: ${filePath}`);
+      return null;
+    } catch (error) {
+      console.error(`[Draft] Error finding draft by file path:`, error);
+      return null;
+    }
+  },
+
+  /**
+   * Cria um draft a partir de um documento enviado pelo usuário
+   * O documento já está salvo localmente no OUTPUT_DIR
+   */
+  async createDraftFromUpload(originalFilename: string, localFilename: string) {
+    try {
+      // Extrair título do nome do arquivo (sem extensão e prefixo)
+      const title = originalFilename
+        .replace(/\.docx$/i, "")
+        .replace(/^uploaded_\d+_/, "")
+        .replace(/_/g, " ");
+
+      console.log(`[Draft] Creating draft from upload: ${originalFilename} -> ${localFilename}`);
+
+      // Criar draft no banco com referência ao arquivo
+      const draftContent = {
+        filePath: localFilename,
+        metadata: {
+          assunto: title,
+          codigo: "---",
+          departamento: "---",
+          revisao: "01",
+          data_publicacao: new Date().toLocaleDateString("pt-BR"),
+          data_vigencia: "---",
+        },
+        lastModified: new Date().toISOString(),
+        importedFrom: originalFilename,
+        importedAt: new Date().toISOString(),
+      };
+
+      const draft = await prisma.draft.create({
+        data: {
+          title,
+          content: draftContent as any,
+          status: "draft",
+        },
+      });
+
+      console.log(`[Draft] Created draft ${draft.id} from uploaded file: ${localFilename}`);
+      return draft;
+    } catch (error) {
+      console.error("[Draft] Error creating draft from upload:", error);
+      throw error;
+    }
   },
 };

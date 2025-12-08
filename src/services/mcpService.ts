@@ -3,9 +3,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const PYTHON_PATH =
-  "C:\\Users\\dasilva.lucas\\Documents\\MCP-WORD\\office-word-mcp-server\\venv\\Scripts\\python";
+  "C:\\Users\\lucas\\Documents\\POC MCP\\office-word-mcp-server\\venv\\Scripts\\python";
 const MCP_SERVER_DIR =
-  "C:\\Users\\dasilva.lucas\\Documents\\MCP-WORD\\office-word-mcp-server";
+  "C:\\Users\\lucas\\Documents\\POC MCP\\office-word-mcp-server";
 
 
 export class McpService {

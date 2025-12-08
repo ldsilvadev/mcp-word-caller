@@ -61,7 +61,7 @@ const draftTools: ChatCompletionTool[] = [
     function: {
       name: "update_draft",
       description:
-        "MUST be used to update/modify/edit an existing draft. When user asks to change, modify, edit, add, remove, or update ANY content in the current document/draft, you MUST call this function with the draft ID and the COMPLETE updated content. Always call get_draft first to get current content, then modify it, then call update_draft. IMPORTANT: For tables, use Markdown table format: | Header1 | Header2 |\\n|---|---|\\n| Value1 | Value2 |",
+        "⚠️ WARNING: Use ONLY for updating draft BEFORE document generation. NEVER use this to edit an existing .docx document - it will DESTROY formatting, tables, and manual edits! For editing existing documents, use section tools: append_to_section, edit_section_title, replace_section_content, append_table_to_section.",
       parameters: {
         type: "object",
         properties: {
@@ -72,7 +72,7 @@ const draftTools: ChatCompletionTool[] = [
           content: {
             type: "object",
             description:
-              "Complete updated JSON content for the draft. The markdownContent field supports: headings (### Title), lists (- item), and TABLES in Markdown format (| col1 | col2 |).",
+              "Complete updated JSON content for the draft. Only use BEFORE generate_document_from_draft.",
             additionalProperties: true,
           },
         },
